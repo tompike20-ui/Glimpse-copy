@@ -2,12 +2,11 @@ import type { AppState } from '../types';
 import { getBlob } from '../storage/db';
 import {
   concatManifest,
-  isUntrimmed,
   outputFileName,
   planExport,
   streamCopyArgs,
-  trimArgs,
 } from './concat';
+import { buildGraph, targetSize } from './filtergraph';
 
 /**
  * ffmpeg.wasm is loaded from vendored files rather than a CDN, because export
@@ -115,7 +114,10 @@ export async function exportProject(
   const ff = await loadFFmpeg();
 
   const written: string[] = [];
-  const segments: string[] = [];
+  const inputs: string[] = [];
+  // Per-input flags, because a still has to be looped into a clip of the right
+  // length rather than decoded as a one-frame video.
+  const inputArgs: string[][] = [];
 
   onProgress?.({ stage: 'writing' });
   for (let i = 0; i < plan.moments.length; i++) {
@@ -123,52 +125,77 @@ export async function exportProject(
     const blob = await getBlob(m.blobKey);
     if (!blob) throw new Error(`missing video for moment ${i + 1}`);
 
-    const raw = `in${i}.mp4`;
-    await ff.writeFile(raw, new Uint8Array(await blob.arrayBuffer()));
-    written.push(raw);
+    const still = m.kind === 'still';
+    const name = still ? `in${i}.jpg` : `in${i}.mp4`;
+    await ff.writeFile(name, new Uint8Array(await blob.arrayBuffer()));
+    written.push(name);
+    inputs.push(name);
+    inputArgs.push(
+      still
+        ? ['-loop', '1', '-framerate', '30', '-t', (m.durationMs / 1000).toFixed(3), '-i', name]
+        : ['-i', name],
+    );
+    onProgress?.({ stage: 'writing', ratio: (i + 1) / plan.moments.length });
+  }
 
-    if (isUntrimmed(m)) {
-      segments.push(raw);
-    } else {
-      onProgress?.({
-        stage: 'trimming',
-        detail: `moment ${i + 1} of ${plan.moments.length}`,
-        ratio: i / plan.moments.length,
-      });
-      const cut = `cut${i}.mp4`;
-      await ff.exec(trimArgs(m, raw, cut));
-      written.push(cut);
-      segments.push(cut);
+  const out = 'out.mp4';
+  let streamCopied = plan.canStreamCopy;
+
+  if (plan.canStreamCopy) {
+    onProgress?.({ stage: 'stitching' });
+    await ff.writeFile(
+      'list.txt',
+      new TextEncoder().encode(concatManifest(inputs)),
+    );
+    written.push('list.txt');
+    try {
+      await ff.exec(streamCopyArgs(out));
+    } catch {
+      // Segments disagreed in a way the stored metadata did not capture.
+      streamCopied = false;
     }
   }
 
-  onProgress?.({ stage: 'stitching' });
-  await ff.writeFile(
-    'list.txt',
-    new TextEncoder().encode(concatManifest(segments)),
-  );
-  written.push('list.txt');
-
-  const out = 'out.mp4';
-  // Only attempt the fast path when the plan says the inputs are compatible;
-  // a doomed -c copy pass costs a full read of every segment before failing.
-  let streamCopied = plan.canStreamCopy;
-  try {
-    if (!plan.canStreamCopy) throw new Error(plan.reencodeReason ?? 'incompatible');
-    await ff.exec(streamCopyArgs(out));
-  } catch {
-    // Either the plan ruled it out, or segments disagreed in some way the
-    // stored metadata did not capture. Either way, encode for real.
-    streamCopied = false;
+  if (!streamCopied) {
     onProgress?.({ stage: 'stitching', detail: 're-encoding' });
+
+    // Music becomes the last ffmpeg input, so the graph can reference it.
+    let musicInputIndex: number | undefined;
+    if (project.music) {
+      const musicBlob = await getBlob(project.music.blobKey);
+      if (musicBlob) {
+        const name = 'music.dat';
+        await ff.writeFile(name, new Uint8Array(await musicBlob.arrayBuffer()));
+        written.push(name);
+        inputs.push(name);
+        inputArgs.push(['-i', name]);
+        musicInputIndex = inputs.length - 1;
+      }
+    }
+
+    const { width, height } = targetSize(
+      project.aspect,
+      project.exportPreset ?? '1080p',
+    );
+    const graph = buildGraph({
+      moments: plan.moments,
+      width,
+      height,
+      music: project.music ?? null,
+      musicInputIndex,
+    });
+
     await ff.exec([
-      '-f', 'concat',
-      '-safe', '0',
-      '-i', 'list.txt',
+      ...inputArgs.flat(),
+      '-filter_complex', graph.filter,
+      '-map', graph.videoOut,
+      '-map', graph.audioOut,
       '-c:v', 'libx264',
       '-preset', 'veryfast',
+      '-crf', '23',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
+      '-b:a', '160k',
       '-movflags', '+faststart',
       out,
     ]);

@@ -5,7 +5,6 @@ import {
   outputFileName,
   planExport,
   streamCopyArgs,
-  trimArgs,
   uniformSize,
 } from './concat';
 import { replay, type JournalEntry } from '../storage/journal';
@@ -124,16 +123,6 @@ describe('ffmpeg args', () => {
     expect(args.join(' ')).not.toContain('libx264');
   });
 
-  it('trim args place -ss before -i so the seek is fast', () => {
-    const args = trimArgs(
-      moment('m', { trimStartMs: 500, trimEndMs: 900 }),
-      'in.mp4',
-      'cut.mp4',
-    );
-    expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'));
-    expect(args[args.indexOf('-ss') + 1]).toBe('0.500');
-    expect(args[args.indexOf('-t') + 1]).toBe('0.400');
-  });
 });
 
 describe('output naming', () => {

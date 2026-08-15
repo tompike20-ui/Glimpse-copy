@@ -34,6 +34,14 @@ be granted persistent storage, so running it in a tab risks losing your work.
 | Front camera crops half the frame to black | Aspect is fitted, not cropped, on both cameras |
 | Forced outro card, even on Pro | None |
 | Capture-only, no recovery | Append-only journal replayed on launch; a crash cannot corrupt a project |
+| Capture-only — camera roll footage can never be used | Import videos and photos; HEIC converted via canvas |
+| No music | Soundtrack with real sidechain ducking under voices |
+| No per-moment control | Speed (0.5/1/2×) and mute per moment |
+| Fixed output | 1080p / 720p export presets |
+
+Beyond the original: **tap tempo**. Tap a few beats and capture lengths snap to
+the grid, so a pile of one-second clips cuts on the beat. Tapped rather than
+detected, because a wrong automatic guess is worse than no guess.
 
 ## Measured on device
 
@@ -76,9 +84,16 @@ node e2e/smoke.mjs # end-to-end, needs the built app served at /Glimpse-copy/
 ```
 
 The e2e run drives Chromium with fake media devices through create → record →
-keep → delete → reload → export, and asserts `getUserMedia` is called **once**
-across multiple moments. That single assertion is the app's core reliability
-claim, so it should never be allowed to regress.
+keep → delete → reload → export → apply speed → re-encode → import a photo →
+export again.
+
+Two things it checks that unit tests cannot:
+
+- **`getUserMedia` is called once** across multiple moments. That single
+  assertion is the app's core reliability claim and must never regress.
+- **The filter graph is valid ffmpeg syntax.** It is unit-tested as a string,
+  so only a real run proves it executes — including the `-loop 1` input path
+  that stills depend on.
 
 ## Architecture
 
@@ -91,7 +106,26 @@ claim, so it should never be allowed to regress.
 - **`src/export/`** — ffmpeg concat at `-c copy` when nothing is trimmed
   (instant, no re-encode), falling back to a real encode only when needed.
   Output goes to the iOS share sheet, where *Save Video* reaches Photos.
+- **`src/export/filtergraph.ts`** — pure string generation for the re-encode
+  path (trim, speed, mute, fit-and-pad, concat, music ducking). Pure because
+  that is the only way to test a filter chain without running ffmpeg in CI.
+- **`src/import/media.ts`** — normalises imports at the door. iPhone photos are
+  HEIC, which ffmpeg.wasm cannot decode, but Safari can — so images are drawn
+  to a canvas and re-encoded as JPEG using the one decoder on the device that
+  understands them.
 - **`src/cloud/`** — optional Supabase layer. Absent by default.
+
+## Not built
+
+Deliberately left out, so the gap is visible rather than implied:
+
+- **Automatic beat detection.** Tap tempo instead. I cannot listen to the
+  output to judge whether a detector is any good, and a badly tuned one is
+  worse than none.
+- **Titles, captions and filters.**
+- **Transitions between moments.** Everything is a hard cut.
+- **Journal / serial Glimpses.** A long-running "a moment a day" Glimpse works,
+  but there is no date-grouped timeline making it feel like a diary.
 
 ### ffmpeg constraints (learned the hard way)
 

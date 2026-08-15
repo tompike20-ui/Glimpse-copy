@@ -88,7 +88,7 @@ await page.evaluate(() => {
 await page.locator('.fab', { hasText: 'Export' }).click();
 await page.waitForFunction(() => window.__exported, null, { timeout: 300000 });
 const exported = await page.evaluate(() => window.__exported);
-console.log('7. exported:', exported.name);
+console.log('7. exported (stream copy):', exported.name);
 
 const bytes = await page.evaluate(async () => {
   const r = await fetch(window.__exported.href);
@@ -96,6 +96,54 @@ const bytes = await page.evaluate(async () => {
   return b.size;
 });
 console.log('   output bytes:', bytes);
+
+// Force the re-encode path: the filter graph is only unit-tested as a string,
+// so this is the one check that it is valid ffmpeg syntax.
+await page.evaluate(() => {
+  window.__exported = null;
+});
+await page.locator('.mrow').first().locator('[aria-label="Trim"]').click();
+await page.locator('.mrow').first().locator('.chip', { hasText: '2×' }).click();
+await page.waitForTimeout(500);
+const speedLabel = await page.locator('.mrow').first().locator('.info').innerText();
+console.log('8. applied speed:', speedLabel.split('\n')[0]);
+
+await page.locator('.fab-inline, .fab', { hasText: 'Export' }).first().click()
+  .catch(async () => {
+    await page.locator('.fab', { hasText: 'Export' }).click();
+  });
+await page.waitForFunction(() => window.__exported, null, { timeout: 600000 });
+const reencoded = await page.evaluate(async () => {
+  const r = await fetch(window.__exported.href);
+  return { name: window.__exported.name, size: (await r.blob()).size };
+});
+console.log('9. exported (re-encoded):', reencoded.name, reencoded.size, 'bytes');
+if (reencoded.size < 1000) errors.push('re-encoded export produced an empty file');
+
+// Import a photo. Stills take the trickiest ffmpeg path (-loop 1 on the input)
+// and go through canvas normalisation first, which is also how HEIC is handled.
+await page.evaluate(() => {
+  window.__exported = null;
+});
+await page
+  .locator('input[type=file][accept*="image"]')
+  .setInputFiles('./public/icons/icon-512.png');
+await page.waitForFunction(
+  () => document.querySelectorAll('.mrow').length === 3,
+  null,
+  { timeout: 30000 },
+);
+const photoRow = await page.locator('.mrow').last().locator('.info').innerText();
+console.log('10. imported photo row:', photoRow.replace(/\n/g, ' | '));
+
+await page.locator('.fab', { hasText: 'Export' }).click();
+await page.waitForFunction(() => window.__exported, null, { timeout: 600000 });
+const withStill = await page.evaluate(async () => {
+  const r = await fetch(window.__exported.href);
+  return (await r.blob()).size;
+});
+console.log('11. exported with still:', withStill, 'bytes');
+if (withStill < 1000) errors.push('export containing a still produced an empty file');
 
 console.log(`\n=== ERRORS (${errors.length}) ===`);
 errors.forEach((e) => console.log(e));

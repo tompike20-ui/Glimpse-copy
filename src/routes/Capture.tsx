@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CaptureSession, type RecordedMoment } from '../capture/session';
 import { newId, useApp } from '../store/useApp';
-import { ASPECT_RATIO, type Moment } from '../types';
+import { ASPECT_RATIO, snapToBeat, type Moment } from '../types';
 
 /** All lengths are free. The original paywalls everything past 1 second. */
 const LENGTHS = [1000, 2000, 3000, 5000];
@@ -221,17 +221,27 @@ export default function Capture() {
         </div>
 
         <div className="lenrow">
-          {LENGTHS.map((ms) => (
-            <button
-              key={ms}
-              className="len"
-              aria-pressed={lengthMs === ms}
-              onClick={() => setLengthMs(ms)}
-            >
-              {ms / 1000}s
-            </button>
-          ))}
+          {LENGTHS.map((ms) => {
+            // With a tempo set, offer beat multiples instead of round seconds,
+            // so every cut lands on the grid and the result looks edited.
+            const actual = project.bpm ? snapToBeat(ms, project.bpm) : ms;
+            return (
+              <button
+                key={ms}
+                className="len"
+                aria-pressed={lengthMs === actual}
+                onClick={() => setLengthMs(actual)}
+              >
+                {(actual / 1000).toFixed(project.bpm ? 2 : 0)}s
+              </button>
+            );
+          })}
         </div>
+        {project.bpm && (
+          <div className="dim" style={{ textAlign: 'center', fontSize: 12 }}>
+            Snapped to {project.bpm} BPM
+          </div>
+        )}
 
         <div className="recrow">
           <button

@@ -395,16 +395,95 @@ button {
   font-size: 12px;
 }
 
-.trim {
+.tools {
+  margin-top: 8px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  margin-top: 6px;
 }
 
-.trim input {
+.toolrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--dim);
+  margin-bottom: 8px;
+}
+
+.toolrow > span {
+  flex: 0 0 74px;
+}
+
+.toolrow input[type='range'] {
   flex: 1;
   accent-color: var(--info);
+  min-width: 0;
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+  font-weight: 600;
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 14px 0;
+}
+
+.mrow img {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #000;
+  flex: none;
+}
+
+.fabrow {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  gap: 10px;
+}
+
+.fab-inline {
+  flex: 1;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  text-align: center;
+}
+
+.fab-inline.alt {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--fg);
+}
+
+.fab-inline:disabled {
+  opacity: 0.5;
 }
 
 .sheet {

@@ -1,4 +1,11 @@
-import type { AppState, Aspect, Moment, Project } from '../types';
+import type {
+  AppState,
+  Aspect,
+  ExportPreset,
+  Moment,
+  MusicTrack,
+  Project,
+} from '../types';
 import { emptyState } from '../types';
 
 /**
@@ -32,7 +39,17 @@ export type JournalEntry =
       momentId: string;
       trimStartMs: number;
       trimEndMs: number | null;
-    } & Base);
+    } & Base)
+  | ({
+      t: 'moment.props';
+      projectId: string;
+      momentId: string;
+      muted?: boolean;
+      speed?: number;
+    } & Base)
+  | ({ t: 'project.music'; id: string; music: MusicTrack | null } & Base)
+  | ({ t: 'project.bpm'; id: string; bpm: number | null } & Base)
+  | ({ t: 'project.exportPreset'; id: string; preset: ExportPreset } & Base);
 
 /** Applies one entry. Unknown or inapplicable entries are ignored, not fatal. */
 export function apply(state: AppState, e: JournalEntry): AppState {
@@ -163,6 +180,55 @@ export function apply(state: AppState, e: JournalEntry): AppState {
       };
     }
 
+    case 'moment.props': {
+      const m = state.moments[e.momentId];
+      if (!m) return state;
+      return {
+        ...state,
+        moments: {
+          ...state.moments,
+          [e.momentId]: {
+            ...m,
+            ...(e.muted === undefined ? {} : { muted: e.muted }),
+            ...(e.speed === undefined ? {} : { speed: e.speed }),
+          },
+        },
+      };
+    }
+
+    case 'project.music': {
+      const p = state.projects[e.id];
+      if (!p) return state;
+      return {
+        ...state,
+        projects: {
+          ...state.projects,
+          [e.id]: { ...p, music: e.music, updatedAt: e.ts },
+        },
+      };
+    }
+
+    case 'project.bpm': {
+      const p = state.projects[e.id];
+      if (!p) return state;
+      return {
+        ...state,
+        projects: { ...state.projects, [e.id]: { ...p, bpm: e.bpm, updatedAt: e.ts } },
+      };
+    }
+
+    case 'project.exportPreset': {
+      const p = state.projects[e.id];
+      if (!p) return state;
+      return {
+        ...state,
+        projects: {
+          ...state.projects,
+          [e.id]: { ...p, exportPreset: e.preset, updatedAt: e.ts },
+        },
+      };
+    }
+
     default:
       return state;
   }
@@ -172,7 +238,15 @@ export function replay(entries: JournalEntry[]): AppState {
   return entries.reduce(apply, emptyState());
 }
 
-/** Blob keys still referenced after replay. Anything else on disk is an orphan. */
+/**
+ * Blob keys still referenced after replay. Anything else on disk is an orphan.
+ * Music tracks count: they live in the same blob store as moments, and missing
+ * them here would see every soundtrack reported as garbage.
+ */
 export function liveBlobKeys(state: AppState): Set<string> {
-  return new Set(Object.values(state.moments).map((m) => m.blobKey));
+  const keys = new Set(Object.values(state.moments).map((m) => m.blobKey));
+  for (const p of Object.values(state.projects)) {
+    if (p.music?.blobKey) keys.add(p.music.blobKey);
+  }
+  return keys;
 }

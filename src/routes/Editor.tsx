@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../store/useApp';
-import { getBlob } from '../storage/db';
+import { getBlob, putBlob } from '../storage/db';
 import { trimmedDurationMs, type Moment } from '../types';
 import {
   exportProject,
@@ -12,6 +12,14 @@ import { planExport } from '../export/concat';
 import { useCloud } from '../cloud/useCloud';
 import { createInvite, ensureBlob, subscribeToProject } from '../cloud/sync';
 
+const REENCODE_TEXT: Record<string, string> = {
+  trimmed: 'Re-encoding trimmed moments…',
+  'mixed-sizes': 'Re-encoding — this Glimpse mixes frame sizes…',
+  music: 'Mixing the soundtrack…',
+  effects: 'Applying speed and mute changes…',
+  imported: 'Re-encoding imported media…',
+};
+
 function MomentRow({
   moment,
   index,
@@ -19,6 +27,7 @@ function MomentRow({
   shared,
   onRemove,
   onTrim,
+  onProps,
   onDragStart,
   onDragEnter,
   onDragEnd,
@@ -30,6 +39,7 @@ function MomentRow({
   shared: boolean;
   onRemove: () => void;
   onTrim: (start: number, end: number | null) => void;
+  onProps: (props: { muted?: boolean; speed?: number }) => void;
   onDragStart: () => void;
   onDragEnter: () => void;
   onDragEnd: () => void;
@@ -67,46 +77,112 @@ function MomentRow({
       onDragOver={(e) => e.preventDefault()}
     >
       <span className="idx">{index + 1}</span>
-      {url ? <video src={url} muted playsInline preload="metadata" /> : <div className="mrow-ph" />}
+      {url ? (
+        moment.kind === 'still' ? (
+          <img src={url} alt="" />
+        ) : (
+          <video src={url} muted playsInline preload="metadata" />
+        )
+      ) : (
+        <div className="mrow-ph" />
+      )}
 
       <div className="info">
         <div>
           {(trimmedDurationMs(moment) / 1000).toFixed(1)}s
+          {(moment.speed ?? 1) !== 1 && ` · ${moment.speed}×`}
+          {moment.muted && ' · muted'}
           {moment.interrupted && <span className="silent-flag"> · interrupted</span>}
         </div>
         {silent ? (
           <div className="silent-flag">no sound recorded</div>
         ) : (
           <div className="dim" style={{ fontSize: 12 }}>
-            {moment.facing === 'user' ? 'Front' : 'Back'} camera
+            {moment.source === 'import'
+              ? moment.kind === 'still'
+                ? 'Photo'
+                : 'Imported clip'
+              : `${moment.facing === 'user' ? 'Front' : 'Back'} camera`}
           </div>
         )}
 
         {open && !locked && (
-          <div className="trim">
-            <input
-              type="range"
-              min={0}
-              max={moment.durationMs}
-              step={50}
-              value={moment.trimStartMs}
-              onChange={(e) =>
-                onTrim(Math.min(Number(e.target.value), end - 100), moment.trimEndMs)
-              }
-            />
-            <input
-              type="range"
-              min={0}
-              max={moment.durationMs}
-              step={50}
-              value={end}
-              onChange={(e) =>
-                onTrim(
-                  moment.trimStartMs,
-                  Math.max(Number(e.target.value), moment.trimStartMs + 100),
-                )
-              }
-            />
+          <div className="tools">
+            {moment.kind !== 'still' && (
+              <>
+                <label className="toolrow">
+                  <span>Start</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={moment.durationMs}
+                    step={50}
+                    value={moment.trimStartMs}
+                    onChange={(e) =>
+                      onTrim(
+                        Math.min(Number(e.target.value), end - 100),
+                        moment.trimEndMs,
+                      )
+                    }
+                  />
+                </label>
+                <label className="toolrow">
+                  <span>End</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={moment.durationMs}
+                    step={50}
+                    value={end}
+                    onChange={(e) =>
+                      onTrim(
+                        moment.trimStartMs,
+                        Math.max(
+                          Number(e.target.value),
+                          moment.trimStartMs + 100,
+                        ),
+                      )
+                    }
+                  />
+                </label>
+              </>
+            )}
+
+            <div className="toolrow">
+              <span>Speed</span>
+              <div className="chips">
+                {[0.5, 1, 2].map((s) => (
+                  <button
+                    key={s}
+                    className="chip"
+                    aria-pressed={(moment.speed ?? 1) === s}
+                    onClick={() => onProps({ speed: s })}
+                  >
+                    {s}×
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="toolrow">
+              <span>Sound</span>
+              <div className="chips">
+                <button
+                  className="chip"
+                  aria-pressed={!moment.muted}
+                  onClick={() => onProps({ muted: false })}
+                >
+                  On
+                </button>
+                <button
+                  className="chip"
+                  aria-pressed={!!moment.muted}
+                  onClick={() => onProps({ muted: true })}
+                >
+                  Muted
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -142,6 +218,11 @@ export default function Editor() {
   const removeMoment = useApp((s) => s.removeMoment);
   const reorderMoments = useApp((s) => s.reorderMoments);
   const trimMoment = useApp((s) => s.trimMoment);
+  const setMomentProps = useApp((s) => s.setMomentProps);
+  const setMusic = useApp((s) => s.setMusic);
+  const setBpm = useApp((s) => s.setBpm);
+  const setExportPreset = useApp((s) => s.setExportPreset);
+  const importFiles = useApp((s) => s.importFiles);
   const setLocked = useApp((s) => s.setLocked);
   const deleteProject = useApp((s) => s.deleteProject);
   const renameProject = useApp((s) => s.renameProject);
@@ -165,6 +246,10 @@ export default function Editor() {
 
   const [shared, setShared] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const importRef = useRef<HTMLInputElement>(null);
+  const musicRef = useRef<HTMLInputElement>(null);
+  const tapsRef = useRef<number[]>([]);
 
   // Live collaboration: a collaborator appending a moment lands as an entry
   // insert, which we pull and replay.
@@ -259,9 +344,7 @@ export default function Editor() {
                 {progress.stage === 'trimming' && `Trimming ${progress.detail}…`}
                 {progress.stage === 'stitching' &&
                   (progress.detail === 're-encoding'
-                    ? plan.reencodeReason === 'mixed-sizes'
-                      ? 'Re-encoding — this Glimpse mixes frame sizes, so it cannot be stitched instantly…'
-                      : 'Re-encoding trimmed moments…'
+                    ? REENCODE_TEXT[plan.reencodeReason ?? 'mixed-sizes']
                     : (progress.detail ?? 'Stitching…'))}
                 {progress.stage === 'reading' && 'Finishing…'}
               </div>
@@ -294,6 +377,7 @@ export default function Editor() {
                 }}
                 onRemove={() => void removeMoment(id, m.id)}
                 onTrim={(start, end) => void trimMoment(id, m.id, start, end)}
+                onProps={(props) => void setMomentProps(id, m.id, props)}
               />
             ))}
           </ul>
@@ -301,14 +385,49 @@ export default function Editor() {
       </div>
 
       {!project.locked && (
-        <button
-          className="fab"
-          onClick={() => nav(`/p/${id}/capture`)}
+        <div
+          className="fabrow"
           style={{ bottom: 'calc(var(--safe-b) + 76px)' }}
         >
-          Add moments
-        </button>
+          <button className="fab-inline" onClick={() => nav(`/p/${id}/capture`)}>
+            Record
+          </button>
+          <button
+            className="fab-inline alt"
+            onClick={() => importRef.current?.click()}
+            disabled={importing}
+          >
+            {importing ? 'Importing…' : 'Import'}
+          </button>
+        </div>
       )}
+
+      {/* Opens the iOS photo picker. Videos and photos both land as moments. */}
+      <input
+        ref={importRef}
+        type="file"
+        accept="video/*,image/*"
+        multiple
+        hidden
+        onChange={async (e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = '';
+          if (!files.length) return;
+          setImporting(true);
+          try {
+            const n = await importFiles(id, files);
+            if (n < files.length) {
+              setExportErr(
+                `Imported ${n} of ${files.length}. Some files were an unsupported type.`,
+              );
+            }
+          } catch (err) {
+            setExportErr(`Import failed: ${(err as Error).message}`);
+          } finally {
+            setImporting(false);
+          }
+        }}
+      />
       <button
         className="fab"
         style={{ background: 'var(--info)' }}
@@ -345,6 +464,140 @@ export default function Editor() {
             >
               {project.locked ? 'Unlock this Glimpse' : 'Lock this Glimpse'}
             </button>
+
+            <hr className="rule" />
+
+            <div className="toolrow">
+              <span>Soundtrack</span>
+              <div className="chips">
+                <button className="chip" onClick={() => musicRef.current?.click()}>
+                  {project.music ? 'Replace' : 'Add music'}
+                </button>
+                {project.music && (
+                  <button className="chip" onClick={() => void setMusic(id, null)}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {project.music && (
+              <>
+                <div className="dim" style={{ fontSize: 13, marginBottom: 8 }}>
+                  {project.music.name}
+                </div>
+                <div className="toolrow">
+                  <span>Balance</span>
+                  <div className="chips">
+                    <button
+                      className="chip"
+                      aria-pressed={!project.music.duckClips}
+                      onClick={() =>
+                        void setMusic(id, { ...project.music!, duckClips: false })
+                      }
+                    >
+                      Voices lead
+                    </button>
+                    <button
+                      className="chip"
+                      aria-pressed={project.music.duckClips}
+                      onClick={() =>
+                        void setMusic(id, { ...project.music!, duckClips: true })
+                      }
+                    >
+                      Music leads
+                    </button>
+                  </div>
+                </div>
+                <label className="toolrow">
+                  <span>Volume</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={project.music.volume}
+                    onChange={(e) =>
+                      void setMusic(id, {
+                        ...project.music!,
+                        volume: Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
+              </>
+            )}
+
+            <div className="toolrow">
+              <span>Tempo</span>
+              <div className="chips">
+                <button
+                  className="chip"
+                  onClick={() => {
+                    // Tapped, not detected. A wrong automatic guess is worse
+                    // than no guess, and tapping four beats is unambiguous.
+                    const now = performance.now();
+                    const taps = tapsRef.current.filter((t) => now - t < 3000);
+                    taps.push(now);
+                    tapsRef.current = taps;
+                    if (taps.length >= 2) {
+                      const gaps = taps.slice(1).map((t, i) => t - taps[i]);
+                      const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+                      void setBpm(id, Math.round(60_000 / avg));
+                    }
+                  }}
+                >
+                  Tap tempo
+                </button>
+                {project.bpm && (
+                  <button className="chip" onClick={() => void setBpm(id, null)}>
+                    {project.bpm} BPM — clear
+                  </button>
+                )}
+              </div>
+            </div>
+            {project.bpm && (
+              <div className="dim" style={{ fontSize: 12, marginBottom: 10 }}>
+                New moments will snap to {(60_000 / project.bpm / 1000).toFixed(2)}s
+                beats.
+              </div>
+            )}
+
+            <div className="toolrow">
+              <span>Quality</span>
+              <div className="chips">
+                {(['1080p', '720p'] as const).map((p) => (
+                  <button
+                    key={p}
+                    className="chip"
+                    aria-pressed={(project.exportPreset ?? '1080p') === p}
+                    onClick={() => void setExportPreset(id, p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <input
+              ref={musicRef}
+              type="file"
+              accept="audio/*"
+              hidden
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (!file) return;
+                const blobKey = `music-${Date.now().toString(36)}`;
+                await putBlob(blobKey, file);
+                await setMusic(id, {
+                  blobKey,
+                  name: file.name,
+                  volume: 0.7,
+                  duckClips: false,
+                });
+              }}
+            />
 
             {cloudConfigured && (
               <>

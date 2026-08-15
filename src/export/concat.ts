@@ -14,9 +14,16 @@ export interface ExportPlan {
    */
   canStreamCopy: boolean;
   /** Why the fast path is unavailable, for the UI to explain the wait. */
-  reencodeReason: 'trimmed' | 'mixed-sizes' | null;
+  reencodeReason: ReencodeReason | null;
   totalMs: number;
 }
+
+export type ReencodeReason =
+  | 'trimmed'
+  | 'mixed-sizes'
+  | 'music'
+  | 'effects'
+  | 'imported';
 
 export function isUntrimmed(m: Moment): boolean {
   return m.trimStartMs === 0 && (m.trimEndMs === null || m.trimEndMs >= m.durationMs);
@@ -34,11 +41,19 @@ export function planExport(state: AppState, projectId: string): ExportPlan {
     .map((id) => state.moments[id])
     .filter((m): m is Moment => !!m);
 
-  const trimmed = !moments.every(isUntrimmed);
-  const mixed = !uniformSize(moments);
-  // Trimming is reported first: it forces a re-encode of the cut segments
-  // regardless of whether sizes also differ.
-  const reencodeReason = trimmed ? 'trimmed' : mixed ? 'mixed-sizes' : null;
+  // Ordered by how clearly each explains the wait to someone watching a
+  // progress bar, not by how the pipeline happens to check them.
+  const reencodeReason: ReencodeReason | null = project?.music
+    ? 'music'
+    : moments.some((m) => m.muted || (m.speed ?? 1) !== 1)
+      ? 'effects'
+      : !moments.every(isUntrimmed)
+        ? 'trimmed'
+        : moments.some((m) => m.source === 'import' || m.kind === 'still')
+          ? 'imported'
+          : !uniformSize(moments)
+            ? 'mixed-sizes'
+            : null;
 
   return {
     moments,
@@ -62,26 +77,6 @@ export function streamCopyArgs(output: string): string[] {
     '-i', 'list.txt',
     '-c', 'copy',
     '-movflags', '+faststart',
-    output,
-  ];
-}
-
-/** Per-moment trim args, used only when a clip is not taken whole. */
-export function trimArgs(m: Moment, input: string, output: string): string[] {
-  const start = m.trimStartMs / 1000;
-  const dur = trimmedDurationMs(m) / 1000;
-  return [
-    '-ss', start.toFixed(3),
-    '-i', input,
-    '-t', dur.toFixed(3),
-    // Trimming needs a real cut, so this segment gets re-encoded. Keeping the
-    // codecs identical to the untrimmed clips keeps the final concat on the
-    // copy path.
-    '-c:v', 'libx264',
-    '-preset', 'veryfast',
-    '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac',
-    '-b:a', '128k',
     output,
   ];
 }

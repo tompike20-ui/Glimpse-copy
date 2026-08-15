@@ -1,6 +1,13 @@
 import { create } from 'zustand';
-import type { AppState, Aspect, Moment } from '../types';
+import type {
+  AppState,
+  Aspect,
+  ExportPreset,
+  Moment,
+  MusicTrack,
+} from '../types';
 import { emptyState } from '../types';
+import { normaliseImage, probeVideo } from '../import/media';
 import { apply, type JournalEntry } from '../storage/journal';
 import {
   appendEntry,
@@ -44,7 +51,20 @@ interface Store {
     trimStartMs: number,
     trimEndMs: number | null,
   ) => Promise<void>;
+  setMomentProps: (
+    projectId: string,
+    momentId: string,
+    props: { muted?: boolean; speed?: number },
+  ) => Promise<void>;
+
+  setMusic: (projectId: string, music: MusicTrack | null) => Promise<void>;
+  setBpm: (projectId: string, bpm: number | null) => Promise<void>;
+  setExportPreset: (projectId: string, preset: ExportPreset) => Promise<void>;
+  importFiles: (projectId: string, files: File[]) => Promise<number>;
 }
+
+/** Default on-screen time for an imported photo. */
+const STILL_MS = 2000;
 
 export const useApp = create<Store>((set, get) => {
   /** Journal first, memory second — disk is the source of truth. */
@@ -150,6 +170,97 @@ export const useApp = create<Store>((set, get) => {
         trimEndMs,
         ts: Date.now(),
       });
+    },
+
+    async setMomentProps(projectId, momentId, props) {
+      await commit({
+        t: 'moment.props',
+        projectId,
+        momentId,
+        ...props,
+        ts: Date.now(),
+      });
+    },
+
+    async setMusic(projectId, music) {
+      const previous = get().state.projects[projectId]?.music?.blobKey;
+      await commit({ t: 'project.music', id: projectId, music, ts: Date.now() });
+      // Drop the old track only once the journal no longer points at it.
+      if (previous && previous !== music?.blobKey) {
+        await deleteBlob(previous).catch(() => {});
+      }
+      void get().refreshQuota();
+    },
+
+    async setBpm(projectId, bpm) {
+      await commit({ t: 'project.bpm', id: projectId, bpm, ts: Date.now() });
+    },
+
+    async setExportPreset(projectId, preset) {
+      await commit({
+        t: 'project.exportPreset',
+        id: projectId,
+        preset,
+        ts: Date.now(),
+      });
+    },
+
+    /**
+     * Bring existing videos and photos in from the camera roll. The original
+     * app is capture-only, which means a Glimpse can never include footage you
+     * already have — the single biggest functional gap in it.
+     */
+    async importFiles(projectId, files) {
+      let added = 0;
+      for (const file of files) {
+        const isImage = file.type.startsWith('image/');
+        const isVideo = file.type.startsWith('video/');
+        if (!isImage && !isVideo) continue;
+
+        let blob: Blob = file;
+        let width = 0;
+        let height = 0;
+        let durationMs = STILL_MS;
+        let mimeType = file.type;
+
+        if (isImage) {
+          // Converts HEIC to JPEG using Safari's decoder, since ffmpeg has none.
+          const img = await normaliseImage(file);
+          blob = img.blob;
+          width = img.width;
+          height = img.height;
+          mimeType = 'image/jpeg';
+        } else {
+          const probe = await probeVideo(file);
+          durationMs = probe.durationMs;
+          width = probe.width;
+          height = probe.height;
+        }
+
+        const moment: Moment = {
+          id: newId(),
+          projectId,
+          createdAt: Date.now(),
+          blobKey: newId(),
+          mimeType,
+          durationMs,
+          trimStartMs: 0,
+          trimEndMs: null,
+          width,
+          height,
+          facing: 'environment',
+          // An import carries no capture-time audio evidence, so it must not
+          // be reported as a silent recording.
+          peakRms: 1,
+          hadAudioTrack: isVideo,
+          source: 'import',
+          kind: isImage ? 'still' : 'video',
+        };
+
+        await get().addMoment(moment, blob);
+        added++;
+      }
+      return added;
     },
   };
 });
