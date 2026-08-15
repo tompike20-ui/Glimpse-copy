@@ -25,7 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # enablement lets the workflow turn Pages on itself rather than needing a
+      # manual trip to repo settings. It cannot override a plan restriction:
+      # Pages from a *private* repo requires a paid GitHub plan.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       # Phase 0 is static: the spike needs no build step. When the Vite app
       # lands in Phase 1 this gains a node setup + `npm ci && npm run build`
