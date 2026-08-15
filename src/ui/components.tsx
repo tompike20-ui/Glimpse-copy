@@ -1,3 +1,4 @@
+import { Icon } from './Icon';
 import {
   useCallback,
   useEffect,
@@ -54,9 +55,7 @@ export function useScrolled(threshold = 8) {
 export function BackButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button className="nav-btn" onClick={onClick}>
-      <span className="chev" aria-hidden>
-        ‹
-      </span>
+      <Icon name="chevron-left" size={21} strokeWidth={2.2} />
       {label}
     </button>
   );
@@ -197,8 +196,9 @@ export function SwipeToDelete({
           onDelete();
         }}
         tabIndex={offset === 0 ? -1 : 0}
+        aria-label="Delete"
       >
-        Delete
+        <Icon name="trash" size={21} />
       </button>
       <div
         className={`swipe-content${dragging ? ' dragging' : ''}`}

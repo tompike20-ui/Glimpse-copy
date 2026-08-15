@@ -4,6 +4,7 @@ import { CaptureSession, type RecordedMoment } from '../capture/session';
 import { newId, useApp } from '../store/useApp';
 import { ASPECT_RATIO, snapToBeat, type Moment } from '../types';
 import { Switch } from '../ui/components';
+import { Icon } from '../ui/Icon';
 
 /** All lengths are free. The original paywalls everything past 1 second. */
 const LENGTHS = [1000, 2000, 3000, 5000];
@@ -203,9 +204,7 @@ export default function Capture() {
             zIndex: 4,
           }}
         >
-          <span className="chev" aria-hidden>
-            ‹
-          </span>
+          <Icon name="chevron-left" size={21} strokeWidth={2.2} />
           Done
         </button>
 
@@ -220,7 +219,7 @@ export default function Capture() {
           }}
           aria-label="Capture settings"
         >
-          ⋯
+          <Icon name="ellipsis" size={20} />
         </button>
 
         {showSettings && (
@@ -294,7 +293,7 @@ export default function Capture() {
             }}
             aria-label="Flip camera"
           >
-            ⟲
+            <Icon name="flip" size={21} />
           </button>
 
           <button
@@ -312,7 +311,7 @@ export default function Capture() {
                 cy="40.5"
                 r="37.5"
                 fill="none"
-                stroke="#ff9f0a"
+                stroke="var(--brand)"
                 strokeWidth="3.5"
                 strokeDasharray="236"
                 strokeDashoffset="236"
@@ -328,7 +327,7 @@ export default function Capture() {
             aria-label="Stop early"
             style={{ opacity: recording ? 1 : 0.35 }}
           >
-            ■
+            <Icon name="stop" size={18} />
           </button>
         </div>
       </div>

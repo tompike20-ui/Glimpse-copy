@@ -103,6 +103,19 @@ with content-aligned separators, segmented controls, switches, and sheets with
 a grabber. Browsing and editing follow the system appearance in both light and
 dark; capture is always dark, the way Camera is.
 
+The brand is a warm amber, kept clear of the red that record and destructive
+actions own. Interactive text stays iOS blue, which is familiar and contrast-safe
+on either background — the amber appears on the app mark, onboarding, the
+capture ring and the active mode.
+
+Every icon is a vector on a 24×24 grid (`src/ui/Icon.tsx`). Text glyphs and
+emoji were the clearest tell that this was a web page: they render differently
+per platform, ignore the type scale and cannot inherit weight.
+
+First run shows a three-point introduction, once. `prefers-reduced-motion` is
+honoured throughout — motion sickness is a real condition and iOS exposes the
+preference.
+
 Capture is modelled on the Camera app — shutter, mode selector, flip, and a
 dimmed overlay showing exactly which part of the frame the chosen shape keeps.
 

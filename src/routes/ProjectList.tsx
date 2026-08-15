@@ -4,6 +4,7 @@ import { useApp } from '../store/useApp';
 import { getBlob } from '../storage/db';
 import type { Aspect, Project } from '../types';
 import { projectDurationMs } from '../types';
+import { Icon } from '../ui/Icon';
 import {
   NavBar,
   Segmented,
@@ -60,7 +61,12 @@ function Cover({ project }: { project: Project }) {
     };
   }, [blobKey]);
 
-  if (!url) return <div className="thumb">{project.locked ? '􀎠' : '🎞'}</div>;
+  if (!url)
+    return (
+      <div className="thumb">
+        <Icon name={project.locked ? 'lock' : 'film'} size={22} />
+      </div>
+    );
   return kind === 'still' ? (
     <img className="thumb" src={url} alt="" />
   ) : (
@@ -98,8 +104,12 @@ export default function ProjectList() {
         title="Glimpses"
         scrolled={scrolled}
         right={
-          <button className="nav-btn right" onClick={() => setCreating(true)}>
-            + New
+          <button
+            className="nav-btn right"
+            onClick={() => setCreating(true)}
+            aria-label="New Glimpse"
+          >
+            <Icon name="plus" size={24} strokeWidth={2} />
           </button>
         }
       />
@@ -121,9 +131,19 @@ export default function ProjectList() {
 
         {projects.length === 0 ? (
           <div className="empty">
+            <svg className="empty-art" viewBox="0 0 132 96" fill="none" aria-hidden>
+              <rect x="6" y="18" width="34" height="60" rx="5"
+                stroke="currentColor" strokeWidth="2" opacity=".45" />
+              <rect x="47" y="8" width="38" height="80" rx="6"
+                stroke="currentColor" strokeWidth="2" />
+              <rect x="92" y="18" width="34" height="60" rx="5"
+                stroke="currentColor" strokeWidth="2" opacity=".45" />
+              <circle cx="66" cy="48" r="11" stroke="currentColor" strokeWidth="2" />
+              <circle cx="66" cy="48" r="4" fill="currentColor" />
+            </svg>
             <strong>No Glimpses yet</strong>
-            Start one and record your first moment. Each moment is added to the
-            same growing video.
+            Capture a second at a time. Every moment joins the same growing
+            video.
           </div>
         ) : (
           <div className="group">
@@ -145,7 +165,14 @@ export default function ProjectList() {
                       <Cover project={p} />
                       <div className="row-main">
                         <div className="row-title">
-                          {p.locked && '🔒 '}
+                          {p.locked && (
+                            <Icon
+                              name="lock"
+                              size={14}
+                              strokeWidth={2}
+                              className="inline-lock"
+                            />
+                          )}
                           {p.name}
                         </div>
                         <div className="row-sub">
@@ -155,8 +182,8 @@ export default function ProjectList() {
                         </div>
                         <div className="row-sub">{relativeDay(p.updatedAt)}</div>
                       </div>
-                      <span className="chevron" aria-hidden>
-                        ›
+                      <span className="chevron">
+                        <Icon name="chevron-right" size={17} strokeWidth={2.4} />
                       </span>
                     </button>
                   </SwipeToDelete>

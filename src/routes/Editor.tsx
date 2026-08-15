@@ -21,6 +21,8 @@ import {
   useScrolled,
 } from '../ui/components';
 import { useReorder } from '../ui/useReorder';
+import { Icon } from '../ui/Icon';
+import { Toast } from '../ui/Toast';
 
 const REENCODE_TEXT: Record<string, string> = {
   trimmed: 'Re-encoding trimmed moments…',
@@ -92,6 +94,7 @@ export default function Editor() {
   const [editing, setEditing] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
   const [importing, setImporting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   const importRef = useRef<HTMLInputElement>(null);
   const musicRef = useRef<HTMLInputElement>(null);
@@ -139,7 +142,9 @@ export default function Editor() {
     setExportErr(null);
     try {
       const result = await exportProject(state, id, setProgress);
-      await shareVideo(result.blob, result.fileName);
+      const shared = await shareVideo(result.blob, result.fileName);
+      // Exporting used to end in silence, which reads as a failure.
+      setToast(shared ? 'Shared' : 'Video ready');
     } catch (err) {
       setExportErr((err as Error).message);
     } finally {
@@ -205,6 +210,15 @@ export default function Editor() {
 
         {moments.length === 0 ? (
           <div className="empty">
+            <svg className="empty-art" viewBox="0 0 132 96" fill="none" aria-hidden>
+              <rect x="8" y="26" width="46" height="44" rx="6"
+                stroke="currentColor" strokeWidth="2" />
+              <rect x="62" y="26" width="46" height="44" rx="6"
+                stroke="currentColor" strokeWidth="2" strokeDasharray="5 5"
+                opacity=".5" />
+              <path d="M118 40v16M110 48h16" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" opacity=".5" />
+            </svg>
             <strong>No moments yet</strong>
             Record or import something to begin.
           </div>
@@ -264,7 +278,7 @@ export default function Editor() {
                             onPointerUp={reorder.end}
                             onPointerCancel={reorder.end}
                           >
-                            ≡
+                            <Icon name="grip" size={20} />
                           </span>
                         )}
                       </div>
@@ -274,8 +288,8 @@ export default function Editor() {
               })}
             </ul>
             <div className="group-footer">
-              Tap a moment to trim it or change its speed. Drag ≡ to reorder,
-              swipe left to delete.
+              Tap a moment to trim it or change its speed. Drag the handle to
+              reorder, swipe left to delete.
             </div>
           </div>
         )}
@@ -288,6 +302,7 @@ export default function Editor() {
               className="btn tinted"
               onClick={() => nav(`/p/${id}/capture`)}
             >
+              <Icon name="camera" size={18} />
               Record
             </button>
             <button
@@ -295,6 +310,7 @@ export default function Editor() {
               onClick={() => importRef.current?.click()}
               disabled={importing}
             >
+              <Icon name="photo" size={18} />
               {importing ? 'Importing…' : 'Import'}
             </button>
           </>
@@ -304,7 +320,14 @@ export default function Editor() {
           onClick={runExport}
           disabled={!!progress || moments.length === 0}
         >
-          {progress ? 'Exporting…' : 'Export'}
+          {progress ? (
+            'Exporting…'
+          ) : (
+            <>
+              <Icon name="share" size={18} />
+              Export
+            </>
+          )}
         </button>
       </div>
 
@@ -334,6 +357,8 @@ export default function Editor() {
           }
         }}
       />
+
+      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
 
       {/* ---------------------------------------------- per-moment editing */}
       {editingMoment && (

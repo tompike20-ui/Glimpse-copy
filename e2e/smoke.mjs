@@ -36,6 +36,13 @@ page.on('console', (m) => {
 const step = (n, msg) => console.log(`${String(n).padStart(2)}. ${msg}`);
 
 await page.goto(BASE, { waitUntil: 'networkidle' });
+
+// First run shows onboarding, which must appear once and then never again.
+await page.waitForSelector('.onboard', { timeout: 20000 });
+step(0, `onboarding: "${await page.locator('.onboard h1').innerText()}"`);
+await page.locator('.onboard .btn').click();
+await page.waitForSelector('.onboard', { state: 'detached', timeout: 10000 });
+
 step(1, `loaded: ${await page.locator('.nav-large').innerText()}`);
 
 // ---- create a project ----
@@ -114,6 +121,9 @@ step(7, `after delete: ${await page.locator('.scroll .list .row').count()} rows`
 // ---- persistence across a full reload ----
 await page.goto(`${BASE}#/`, { waitUntil: 'networkidle' });
 await page.reload({ waitUntil: 'networkidle' });
+if (await page.locator('.onboard').count()) {
+  errors.push('onboarding reappeared after being dismissed');
+}
 await page.waitForSelector('.scroll .list .row', { timeout: 20000 });
 step(8, `persisted: ${(await page.locator('.row-sub').first().innerText()).trim()}`);
 
