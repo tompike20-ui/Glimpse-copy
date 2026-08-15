@@ -26,7 +26,9 @@ export type IconName =
   | 'film'
   | 'metronome'
   | 'mic-off'
-  | 'sparkle';
+  | 'sparkle'
+  | 'play'
+  | 'sliders';
 
 const PATHS: Record<IconName, JSX.Element> = {
   'chevron-left': <path d="M15 4.5 7.5 12l7.5 7.5" />,
@@ -115,6 +117,14 @@ const PATHS: Record<IconName, JSX.Element> = {
   ),
   sparkle: (
     <path d="M12 3.5 13.6 9 19 10.6 13.6 12.2 12 17.7 10.4 12.2 5 10.6 10.4 9z" />
+  ),
+  play: <path d="M8 5.2v13.6a1 1 0 0 0 1.5.87l11-6.8a1 1 0 0 0 0-1.74l-11-6.8A1 1 0 0 0 8 5.2z" />,
+  sliders: (
+    <>
+      <path d="M4 8h10M18 8h2M4 16h4M12 16h8" />
+      <circle cx="16" cy="8" r="2.2" />
+      <circle cx="10" cy="16" r="2.2" />
+    </>
   ),
 };
 

@@ -54,7 +54,7 @@ interface Store {
   setMomentProps: (
     projectId: string,
     momentId: string,
-    props: { muted?: boolean; speed?: number },
+    props: { muted?: boolean; speed?: number; durationMs?: number },
   ) => Promise<void>;
 
   setMusic: (projectId: string, music: MusicTrack | null) => Promise<void>;

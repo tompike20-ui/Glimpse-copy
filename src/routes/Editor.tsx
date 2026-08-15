@@ -23,6 +23,7 @@ import {
 import { useReorder } from '../ui/useReorder';
 import { Icon } from '../ui/Icon';
 import { Toast } from '../ui/Toast';
+import { Preview } from '../ui/Preview';
 
 const REENCODE_TEXT: Record<string, string> = {
   trimmed: 'Re-encoding trimmed moments…',
@@ -95,6 +96,7 @@ export default function Editor() {
   const [draftName, setDraftName] = useState('');
   const [importing, setImporting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
 
   const importRef = useRef<HTMLInputElement>(null);
   const musicRef = useRef<HTMLInputElement>(null);
@@ -160,15 +162,26 @@ export default function Editor() {
         large={false}
         left={<BackButton label="Glimpses" onClick={() => nav('/')} />}
         right={
-          <button
-            className="nav-btn right"
-            onClick={() => {
-              setDraftName(project.name);
-              setSettingsOpen(true);
-            }}
-          >
-            Settings
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              className="nav-btn"
+              onClick={() => setPreviewing(true)}
+              disabled={moments.length === 0}
+              aria-label="Preview"
+            >
+              <Icon name="play" size={22} />
+            </button>
+            <button
+              className="nav-btn right"
+              onClick={() => {
+                setDraftName(project.name);
+                setSettingsOpen(true);
+              }}
+              aria-label="Glimpse settings"
+            >
+              <Icon name="sliders" size={22} />
+            </button>
+          </div>
         }
       />
 
@@ -358,6 +371,14 @@ export default function Editor() {
         }}
       />
 
+      {previewing && (
+        <Preview
+          moments={moments}
+          music={project.music}
+          onClose={() => setPreviewing(false)}
+        />
+      )}
+
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
 
       {/* ---------------------------------------------- per-moment editing */}
@@ -371,7 +392,33 @@ export default function Editor() {
             </button>
           }
         >
-          {editingMoment.kind !== 'still' && (
+          {editingMoment.kind === 'still' ? (
+            <div className="group">
+              <div className="group-header">On screen for</div>
+              <div className="list">
+                <div className="row">
+                  <span className="row-value" style={{ flex: '0 0 56px' }}>
+                    {(editingMoment.durationMs / 1000).toFixed(1)}s
+                  </span>
+                  <input
+                    type="range"
+                    min={500}
+                    max={10000}
+                    step={250}
+                    value={editingMoment.durationMs}
+                    onChange={(e) =>
+                      void setMomentProps(id, editingMoment.id, {
+                        durationMs: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="group-footer">
+                How long this photo is held in the finished video.
+              </div>
+            </div>
+          ) : (
             <div className="group">
               <div className="group-header">Trim</div>
               <div className="list">

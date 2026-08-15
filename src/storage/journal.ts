@@ -46,6 +46,8 @@ export type JournalEntry =
       momentId: string;
       muted?: boolean;
       speed?: number;
+      /** Stills only: how long the photo is held on screen. */
+      durationMs?: number;
     } & Base)
   | ({ t: 'project.music'; id: string; music: MusicTrack | null } & Base)
   | ({ t: 'project.bpm'; id: string; bpm: number | null } & Base)
@@ -191,6 +193,7 @@ export function apply(state: AppState, e: JournalEntry): AppState {
             ...m,
             ...(e.muted === undefined ? {} : { muted: e.muted }),
             ...(e.speed === undefined ? {} : { speed: e.speed }),
+            ...(e.durationMs === undefined ? {} : { durationMs: e.durationMs }),
           },
         },
       };

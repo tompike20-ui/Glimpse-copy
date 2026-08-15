@@ -130,6 +130,24 @@ step(8, `persisted: ${(await page.locator('.row-sub').first().innerText()).trim(
 // ---- export: stream copy ----
 await page.locator('.scroll .list .row').first().click();
 await page.waitForSelector('.toolbar', { timeout: 20000 });
+
+// ---- preview plays the whole Glimpse without exporting ----
+await page.locator('.nav-btn[aria-label="Preview"]').click();
+await page.waitForSelector('.preview', { timeout: 20000 });
+const totalLabel = await page.locator('.preview-meta').innerText();
+// Wait for playback to actually reach the end rather than assuming it does.
+await page.waitForFunction(
+  () => {
+    const bar = document.querySelector('.preview-track i');
+    return bar && parseFloat(bar.style.width) > 85;
+  },
+  null,
+  { timeout: 30000 },
+);
+step(8.5, `preview reached end — ${totalLabel.replace(/\n/g, ' | ')}`);
+await page.locator('.preview .btn').click();
+await page.waitForSelector('.preview', { state: 'detached', timeout: 10000 });
+
 await page.evaluate(() => {
   navigator.canShare = () => false;
   const orig = HTMLAnchorElement.prototype.click;
@@ -185,6 +203,18 @@ await page.waitForFunction(
   { timeout: 30000 },
 );
 step(12, `imported photo: ${(await page.locator('.row-sub').last().innerText()).trim()}`);
+
+// A photo's on-screen time is editable; it used to be hard-coded to 2s.
+await page.locator('.scroll .list .row .row-main').last().click();
+await page.waitForSelector('.sheet', { timeout: 10000 });
+const durBefore = (await page.locator('.scroll .list .row-title').last().innerText()).trim();
+await page.locator('.sheet input[type=range]').first().fill('6000');
+await page.waitForTimeout(400);
+const durAfter = (await page.locator('.scroll .list .row-title').last().innerText()).trim();
+step('12.5', `still duration: ${durBefore} → ${durAfter}`);
+if (durBefore === durAfter) errors.push('still duration did not change');
+await page.locator('.sheet .nav-btn', { hasText: 'Done' }).click();
+await page.waitForSelector('.sheet', { state: 'detached', timeout: 10000 });
 
 await page.locator('.toolbar .btn.filled').click();
 await page.waitForFunction(() => window.__exported, null, { timeout: 600000 });

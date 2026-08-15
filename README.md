@@ -144,6 +144,10 @@ events, not mouse or HTML5 drag:
 - **`src/export/filtergraph.ts`** — pure string generation for the re-encode
   path (trim, speed, mute, fit-and-pad, concat, music ducking). Pure because
   that is the only way to test a filter chain without running ffmpeg in CI.
+- **`src/ui/Preview.tsx`** — plays a Glimpse without exporting it, straight
+  from the stored files, honouring trim, speed, mute and stills. Two video
+  elements alternate so there is no black flash at each cut, which on
+  one-second moments would be most of what you see.
 - **`src/import/media.ts`** — normalises imports at the door. iPhone photos are
   HEIC, which ffmpeg.wasm cannot decode, but Safari can — so images are drawn
   to a canvas and re-encoded as JPEG using the one decoder on the device that
