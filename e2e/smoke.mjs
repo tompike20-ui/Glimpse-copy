@@ -1,7 +1,9 @@
 import pw from 'playwright';
 const { chromium } = pw;
 
+const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:8099/Glimpse-copy/';
 const errors = [];
+
 const browser = await chromium.launch({
   args: [
     '--use-fake-ui-for-media-stream',
@@ -14,6 +16,7 @@ const ctx = await browser.newContext({
   viewport: { width: 390, height: 844 },
 });
 const page = await ctx.newPage();
+
 // Count getUserMedia calls. The core reliability claim is that the stream is
 // acquired ONCE per capture session, not once per moment — re-acquiring is
 // what makes the original app drop audio on later clips.
@@ -30,54 +33,94 @@ page.on('console', (m) => {
   if (m.type() === 'error') errors.push(m.text());
 });
 
-await page.goto('http://127.0.0.1:8099/Glimpse-copy/', { waitUntil: 'networkidle' });
-console.log('1. loaded:', await page.locator('.topbar h1').innerText());
+const step = (n, msg) => console.log(`${String(n).padStart(2)}. ${msg}`);
 
-// Create a project.
-await page.click('.fab');
+await page.goto(BASE, { waitUntil: 'networkidle' });
+step(1, `loaded: ${await page.locator('.nav-large').innerText()}`);
+
+// ---- create a project ----
+await page.locator('.toolbar .btn', { hasText: 'New Glimpse' }).click();
 await page.fill('.field', 'Smoke Test');
-await page.click('.choices button:nth-child(2)'); // square
-await page.click('.primary');
-// Wait for the camera to actually be live, not merely for the button to exist.
-await page.waitForSelector('.recbtn[data-ready="true"]:not([disabled])', { timeout: 30000 });
-console.log('2. capture screen reached, camera live');
+await page.locator('.segmented button', { hasText: 'Square' }).click();
+await page.locator('.nav-btn', { hasText: 'Start' }).click();
 
-// Record three moments back to back on the held stream.
+await page.waitForSelector('.shutter[data-ready="true"]:not([disabled])', {
+  timeout: 30000,
+});
+step(2, 'capture screen reached, camera live');
+
+// ---- record three moments on the held stream ----
 for (let i = 0; i < 3; i++) {
-  await page.click('.recbtn');
+  await page.locator('.shutter').click();
   await page.waitForSelector('.review', { timeout: 20000 });
-  await page.click('.btn-keep');
+  await page.locator('.review-actions .btn.filled').click();
   await page.waitForSelector('.review', { state: 'detached', timeout: 20000 });
-  console.log(`   kept moment ${i + 1}: ${await page.locator('.topbar h1').innerText()}`);
+}
+step(3, `recorded 3 moments — pill reads "${await page.locator('.pill').innerText()}"`);
+step(4, `getUserMedia calls: ${await page.evaluate(() => window.__gumCalls)}`);
+if ((await page.evaluate(() => window.__gumCalls)) !== 1) {
+  errors.push('stream was re-acquired: the audio-loss regression is back');
 }
 
-// Confirm the stream was held, not re-acquired per clip.
-const gumCalls = await page.evaluate(() => window.__gumCalls ?? 'not-instrumented');
-console.log('3. getUserMedia calls:', gumCalls);
+// ---- editor ----
+await page.locator('.nav-btn', { hasText: 'Done' }).click();
+await page.waitForSelector('.scroll .list .row', { timeout: 20000 });
+step(5, `editor rows: ${await page.locator('.scroll .list .row').count()}`);
 
-await page.click('.topbar .link'); // Done
-await page.waitForSelector('.strip', { timeout: 20000 });
-const rows = await page.locator('.mrow').count();
-console.log('4. editor rows:', rows);
-console.log('   summary:', (await page.locator('.pad .dim').first().innerText()).trim());
-
-// Reorder via the journal path, then confirm persistence across reload.
-await page.locator('.mrow').first().locator('[aria-label="Delete moment"]').click();
+// ---- reorder via pointer events ----
+// The previous implementation used HTML5 drag-and-drop, which never fires for
+// touch on iOS. This drag proves the pointer-event path actually reorders.
+// Compare moment ids, not row text: rows are labelled by position, so a
+// successful reorder leaves the visible strings identical.
+const ids = () =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('[data-moment-id]')].map(
+      (el) => el.dataset.momentId,
+    ),
+  );
+const before = await ids();
+const grip = page.locator('.scroll .list .row .grip').first();
+const box = await grip.boundingBox();
+const rowBox = await page.locator('.scroll .list .row').first().boundingBox();
+await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+await page.mouse.down();
+await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + rowBox.height, {
+  steps: 10,
+});
+await page.mouse.up();
 await page.waitForTimeout(400);
-console.log('5. after delete:', await page.locator('.mrow').count(), 'rows');
+const after = await ids();
+step(
+  6,
+  `reorder: ${before.join(',').slice(0, 30)} → ${after.join(',').slice(0, 30)}`,
+);
+if (JSON.stringify(before) === JSON.stringify(after)) {
+  errors.push('reorder did nothing — pointer-event drag is broken');
+}
 
-// Reload lands back on the hash route it was on, so navigate to the list
-// explicitly to prove the journal survived a full restart.
-await page.goto('http://127.0.0.1:8099/Glimpse-copy/#/', { waitUntil: 'networkidle' });
+// ---- per-moment sheet: delete ----
+await page.locator('.scroll .list .row .row-main').first().click();
+await page.waitForSelector('.sheet', { timeout: 10000 });
+const rowsBeforeDelete = await page.locator('.scroll .list .row').count();
+await page.locator('.sheet .row.destructive').click();
+await page.waitForSelector('.sheet', { state: 'detached', timeout: 10000 });
+await page.waitForFunction(
+  (n) => document.querySelectorAll('.scroll .list .row').length === n - 1,
+  rowsBeforeDelete,
+  { timeout: 10000 },
+);
+step(7, `after delete: ${await page.locator('.scroll .list .row').count()} rows`);
+
+// ---- persistence across a full reload ----
+await page.goto(`${BASE}#/`, { waitUntil: 'networkidle' });
 await page.reload({ waitUntil: 'networkidle' });
-await page.waitForSelector('.pcard', { timeout: 20000 });
-console.log('6. persisted after reload:', (await page.locator('.pcard .dim').innerText()).trim());
+await page.waitForSelector('.scroll .list .row', { timeout: 20000 });
+step(8, `persisted: ${(await page.locator('.row-sub').first().innerText()).trim()}`);
 
-// Export: exercises ffmpeg concat for real.
-await page.click('.pcard');
-await page.waitForSelector('.strip', { timeout: 20000 });
+// ---- export: stream copy ----
+await page.locator('.scroll .list .row').first().click();
+await page.waitForSelector('.toolbar', { timeout: 20000 });
 await page.evaluate(() => {
-  // Web Share is unavailable in headless Chromium; capture the blob instead.
   navigator.canShare = () => false;
   const orig = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function () {
@@ -85,67 +128,64 @@ await page.evaluate(() => {
     else orig.call(this);
   };
 });
-await page.locator('.fab', { hasText: 'Export' }).click();
-await page.waitForFunction(() => window.__exported, null, { timeout: 300000 });
-const exported = await page.evaluate(() => window.__exported);
-console.log('7. exported (stream copy):', exported.name);
-
-const bytes = await page.evaluate(async () => {
-  const r = await fetch(window.__exported.href);
-  const b = await r.blob();
-  return b.size;
-});
-console.log('   output bytes:', bytes);
-
-// Force the re-encode path: the filter graph is only unit-tested as a string,
-// so this is the one check that it is valid ffmpeg syntax.
-await page.evaluate(() => {
-  window.__exported = null;
-});
-await page.locator('.mrow').first().locator('[aria-label="Trim"]').click();
-await page.locator('.mrow').first().locator('.chip', { hasText: '2×' }).click();
-await page.waitForTimeout(500);
-const speedLabel = await page.locator('.mrow').first().locator('.info').innerText();
-console.log('8. applied speed:', speedLabel.split('\n')[0]);
-
-await page.locator('.fab-inline, .fab', { hasText: 'Export' }).first().click()
-  .catch(async () => {
-    await page.locator('.fab', { hasText: 'Export' }).click();
-  });
+await page.locator('.toolbar .btn.filled').click();
 await page.waitForFunction(() => window.__exported, null, { timeout: 600000 });
-const reencoded = await page.evaluate(async () => {
+const copyOut = await page.evaluate(async () => {
   const r = await fetch(window.__exported.href);
   return { name: window.__exported.name, size: (await r.blob()).size };
 });
-console.log('9. exported (re-encoded):', reencoded.name, reencoded.size, 'bytes');
-if (reencoded.size < 1000) errors.push('re-encoded export produced an empty file');
+step(9, `exported (stream copy): ${copyOut.name} ${copyOut.size} bytes`);
+if (copyOut.size < 1000) errors.push('stream-copy export produced an empty file');
 
-// Import a photo. Stills take the trickiest ffmpeg path (-loop 1 on the input)
-// and go through canvas normalisation first, which is also how HEIC is handled.
+// ---- export: forced re-encode ----
+// The filter graph is unit-tested only as a string, so this is the one check
+// that it is valid ffmpeg syntax rather than merely well-formed text.
 await page.evaluate(() => {
   window.__exported = null;
 });
+await page.locator('.scroll .list .row .row-main').first().click();
+await page.waitForSelector('.sheet', { timeout: 10000 });
+await page.locator('.sheet .segmented button', { hasText: '2×' }).click();
+await page.locator('.sheet .nav-btn', { hasText: 'Done' }).click();
+await page.waitForSelector('.sheet', { state: 'detached', timeout: 10000 });
+step(10, `applied 2x speed: ${(await page.locator('.row-title').first().innerText()).trim()}`);
+
+await page.locator('.toolbar .btn.filled').click();
+await page.waitForFunction(() => window.__exported, null, { timeout: 600000 });
+const reOut = await page.evaluate(async () => {
+  const r = await fetch(window.__exported.href);
+  return (await r.blob()).size;
+});
+step(11, `exported (re-encoded): ${reOut} bytes`);
+if (reOut < 1000) errors.push('re-encoded export produced an empty file');
+
+// ---- import a photo, then export with a still in the timeline ----
+// Stills take the trickiest ffmpeg path (-loop 1) and go through canvas
+// normalisation first, which is also how HEIC is handled on device.
+await page.evaluate(() => {
+  window.__exported = null;
+});
+const rowsBefore = await page.locator('.scroll .list .row').count();
 await page
   .locator('input[type=file][accept*="image"]')
   .setInputFiles('./public/icons/icon-512.png');
 await page.waitForFunction(
-  () => document.querySelectorAll('.mrow').length === 3,
-  null,
+  (n) => document.querySelectorAll('.scroll .list .row').length === n + 1,
+  rowsBefore,
   { timeout: 30000 },
 );
-const photoRow = await page.locator('.mrow').last().locator('.info').innerText();
-console.log('10. imported photo row:', photoRow.replace(/\n/g, ' | '));
+step(12, `imported photo: ${(await page.locator('.row-sub').last().innerText()).trim()}`);
 
-await page.locator('.fab', { hasText: 'Export' }).click();
+await page.locator('.toolbar .btn.filled').click();
 await page.waitForFunction(() => window.__exported, null, { timeout: 600000 });
-const withStill = await page.evaluate(async () => {
+const stillOut = await page.evaluate(async () => {
   const r = await fetch(window.__exported.href);
   return (await r.blob()).size;
 });
-console.log('11. exported with still:', withStill, 'bytes');
-if (withStill < 1000) errors.push('export containing a still produced an empty file');
+step(13, `exported with still: ${stillOut} bytes`);
+if (stillOut < 1000) errors.push('export containing a still produced an empty file');
 
 console.log(`\n=== ERRORS (${errors.length}) ===`);
 errors.forEach((e) => console.log(e));
 await browser.close();
-process.exit(errors.length || bytes < 1000 ? 1 : 0);
+process.exit(errors.length ? 1 : 0);

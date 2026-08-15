@@ -1,26 +1,81 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../store/useApp';
-import type { Aspect } from '../types';
+import { getBlob } from '../storage/db';
+import type { Aspect, Project } from '../types';
 import { projectDurationMs } from '../types';
+import {
+  NavBar,
+  Segmented,
+  Sheet,
+  SwipeToDelete,
+  useScrolled,
+} from '../ui/components';
 
-const ASPECTS: { key: Aspect; label: string }[] = [
-  { key: 'portrait', label: 'Portrait' },
-  { key: 'square', label: 'Square' },
-  { key: 'landscape', label: 'Landscape' },
-];
+const ASPECTS: Aspect[] = ['portrait', 'square', 'landscape'];
+const ASPECT_LABEL: Record<Aspect, string> = {
+  portrait: 'Portrait',
+  square: 'Square',
+  landscape: 'Landscape',
+};
 
 function fmtDuration(ms: number): string {
   const s = Math.round(ms / 1000);
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  if (s < 60) return `${s} sec`;
+  return `${Math.floor(s / 60)} min ${s % 60} sec`;
+}
+
+function relativeDay(ts: number): string {
+  const days = Math.floor((Date.now() - ts) / 86_400_000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
+  return new Date(ts).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+/** Cover frame for a Glimpse, read from its first moment. */
+function Cover({ project }: { project: Project }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const firstId = project.momentIds[0];
+  const blobKey = useApp((s) =>
+    firstId ? s.state.moments[firstId]?.blobKey : undefined,
+  );
+  const kind = useApp((s) => (firstId ? s.state.moments[firstId]?.kind : undefined));
+
+  useEffect(() => {
+    if (!blobKey) return;
+    let made: string | null = null;
+    let cancelled = false;
+    void getBlob(blobKey).then((b) => {
+      if (!b || cancelled) return;
+      made = URL.createObjectURL(b);
+      setUrl(made);
+    });
+    return () => {
+      cancelled = true;
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [blobKey]);
+
+  if (!url) return <div className="thumb">{project.locked ? '􀎠' : '🎞'}</div>;
+  return kind === 'still' ? (
+    <img className="thumb" src={url} alt="" />
+  ) : (
+    <video className="thumb" src={url} muted playsInline preload="metadata" />
+  );
 }
 
 export default function ProjectList() {
   const nav = useNavigate();
   const state = useApp((s) => s.state);
   const createProject = useApp((s) => s.createProject);
+  const deleteProject = useApp((s) => s.deleteProject);
   const quota = useApp((s) => s.quota);
   const recovered = useApp((s) => s.recovered);
+  const { scrolled, onScroll } = useScrolled();
 
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -39,64 +94,104 @@ export default function ProjectList() {
 
   return (
     <div className="screen">
-      <div className="topbar">
-        <h1>Glimpses</h1>
-      </div>
+      <NavBar
+        title="Glimpses"
+        scrolled={scrolled}
+        right={
+          <button className="nav-btn right" onClick={() => setCreating(true)}>
+            + New
+          </button>
+        }
+      />
 
-      <div className="scroll">
+      <div className="scroll" onScroll={onScroll}>
         {recovered.length > 0 && (
-          <div className="pad">
-            <div className="banner warn">
-              Recovered {recovered.length} clip
-              {recovered.length > 1 ? 's' : ''} from an interrupted recording.
-            </div>
+          <div className="banner warn">
+            Recovered {recovered.length} clip{recovered.length > 1 ? 's' : ''} from
+            an interrupted recording.
           </div>
         )}
 
         {quota && quota.ratio > 0.8 && (
-          <div className="pad">
-            <div className="banner bad">
-              Storage is {Math.round(quota.ratio * 100)}% full. Export and delete
-              a Glimpse to free space.
-            </div>
+          <div className="banner bad">
+            Storage is {Math.round(quota.ratio * 100)}% full. Export and delete a
+            Glimpse to free space.
           </div>
         )}
 
         {projects.length === 0 ? (
           <div className="empty">
-            No Glimpses yet.
-            <br />
-            Start one and record your first moment.
+            <strong>No Glimpses yet</strong>
+            Start one and record your first moment. Each moment is added to the
+            same growing video.
           </div>
         ) : (
-          <ul className="plist">
-            {projects.map((p) => (
-              <li key={p.id}>
-                <button className="pcard" onClick={() => nav(`/p/${p.id}`)}>
-                  <div className="thumb">{p.locked ? '🔒' : '🎞'}</div>
-                  <div className="meta">
-                    <div className="name">{p.name}</div>
-                    <div className="dim">
-                      {p.momentIds.length} moment
-                      {p.momentIds.length === 1 ? '' : 's'} ·{' '}
-                      {fmtDuration(projectDurationMs(state, p.id))}
-                    </div>
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="group">
+            <ul className="list">
+              {projects.map((p) => (
+                <li key={p.id}>
+                  <SwipeToDelete
+                    disabled={p.locked}
+                    onDelete={() => {
+                      if (confirm(`Delete “${p.name}” and all its moments?`)) {
+                        void deleteProject(p.id);
+                      }
+                    }}
+                  >
+                    <button
+                      className="row inset-sep"
+                      onClick={() => nav(`/p/${p.id}`)}
+                    >
+                      <Cover project={p} />
+                      <div className="row-main">
+                        <div className="row-title">
+                          {p.locked && '🔒 '}
+                          {p.name}
+                        </div>
+                        <div className="row-sub">
+                          {p.momentIds.length} moment
+                          {p.momentIds.length === 1 ? '' : 's'} ·{' '}
+                          {fmtDuration(projectDurationMs(state, p.id))}
+                        </div>
+                        <div className="row-sub">{relativeDay(p.updatedAt)}</div>
+                      </div>
+                      <span className="chevron" aria-hidden>
+                        ›
+                      </span>
+                    </button>
+                  </SwipeToDelete>
+                </li>
+              ))}
+            </ul>
+            <div className="group-footer">
+              Swipe a Glimpse left to delete it. Locked Glimpses cannot be
+              deleted or edited.
+            </div>
+          </div>
         )}
       </div>
 
-      <button className="fab" onClick={() => setCreating(true)}>
-        New Glimpse
-      </button>
+      <div className="toolbar">
+        <button className="btn filled" onClick={() => setCreating(true)}>
+          New Glimpse
+        </button>
+      </div>
 
       {creating && (
-        <div className="sheet" onClick={() => setCreating(false)}>
-          <div className="card" onClick={(e) => e.stopPropagation()}>
-            <h2>New Glimpse</h2>
+        <Sheet
+          title="New Glimpse"
+          onClose={() => setCreating(false)}
+          rightAction={
+            <button
+              className="nav-btn right"
+              style={{ fontWeight: 600 }}
+              onClick={create}
+            >
+              Start
+            </button>
+          }
+        >
+          <div className="group">
             <input
               className="field"
               placeholder="Name"
@@ -104,25 +199,22 @@ export default function ProjectList() {
               onChange={(e) => setName(e.target.value)}
               autoFocus
             />
-            <div className="choices">
-              {ASPECTS.map((a) => (
-                <button
-                  key={a.key}
-                  aria-pressed={aspect === a.key}
-                  onClick={() => setAspect(a.key)}
-                >
-                  {a.label}
-                </button>
-              ))}
-            </div>
-            <button className="primary" onClick={create}>
-              Start recording
-            </button>
-            <button className="secondary" onClick={() => setCreating(false)}>
-              Cancel
-            </button>
           </div>
-        </div>
+
+          <div className="group">
+            <div className="group-header">Shape</div>
+            <Segmented
+              options={ASPECTS}
+              value={aspect}
+              onChange={setAspect}
+              format={(a) => ASPECT_LABEL[a]}
+            />
+            <div className="group-footer">
+              Every moment is fitted to this shape, so mixing cameras never
+              crops the frame. This cannot be changed later.
+            </div>
+          </div>
+        </Sheet>
       )}
     </div>
   );

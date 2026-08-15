@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { CaptureSession, type RecordedMoment } from '../capture/session';
 import { newId, useApp } from '../store/useApp';
 import { ASPECT_RATIO, snapToBeat, type Moment } from '../types';
+import { Switch } from '../ui/components';
 
 /** All lengths are free. The original paywalls everything past 1 second. */
 const LENGTHS = [1000, 2000, 3000, 5000];
@@ -24,6 +25,7 @@ export default function Capture() {
   const [ready, setReady] = useState(false);
   const [recording, setRecording] = useState(false);
   const [autoSave, setAutoSave] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [silent, setSilent] = useState(false);
   const [pending, setPending] = useState<RecordedMoment | null>(null);
@@ -31,7 +33,7 @@ export default function Capture() {
   const [count, setCount] = useState(project?.momentIds.length ?? 0);
 
   /* Acquire the stream once, on entering the screen — not per moment, and not
-     on the first tap, so the record button responds instantly. */
+     on the first tap, so the shutter responds instantly. */
   useEffect(() => {
     const session = new CaptureSession();
     sessionRef.current = session;
@@ -54,7 +56,7 @@ export default function Capture() {
         if (!cancelled) {
           setError(
             err.name === 'NotAllowedError'
-              ? 'Camera and microphone access was denied. Enable it in Settings → Safari.'
+              ? 'Camera access denied. Enable it in Settings → Safari.'
               : `Could not start the camera: ${err.message}`,
           );
         }
@@ -67,16 +69,15 @@ export default function Capture() {
     };
   }, []);
 
-  /* Live mic meter. Driven off rAF rather than React state so a 60 Hz signal
-     does not re-render the tree. */
+  /* Mic meter driven off rAF rather than React state, so a 60 Hz signal does
+     not re-render the tree. */
   useEffect(() => {
     let raf = 0;
     const tick = () => {
       const s = sessionRef.current;
       const bar = meterRef.current;
       if (s?.active && bar) {
-        const level = s.level();
-        bar.style.width = `${Math.min(100, level * 400)}%`;
+        bar.style.width = `${Math.min(100, s.level() * 400)}%`;
       }
       raf = requestAnimationFrame(tick);
     };
@@ -101,6 +102,8 @@ export default function Capture() {
         peakRms: rec.peakRms,
         hadAudioTrack: rec.hadAudioTrack,
         interrupted: rec.interrupted || undefined,
+        source: 'capture',
+        kind: 'video',
       };
       await addMoment(moment, rec.blob);
       setCount((c) => c + 1);
@@ -115,11 +118,10 @@ export default function Capture() {
     setError(null);
     setRecording(true);
 
-    // Animate the countdown ring for the nominal length.
     const ring = ringRef.current;
     if (ring) {
       ring.style.transition = 'none';
-      ring.style.strokeDashoffset = '251';
+      ring.style.strokeDashoffset = '236';
       requestAnimationFrame(() => {
         ring.style.transition = `stroke-dashoffset ${lengthMs}ms linear`;
         ring.style.strokeDashoffset = '0';
@@ -142,17 +144,17 @@ export default function Capture() {
       setRecording(false);
       if (ring) {
         ring.style.transition = 'none';
-        ring.style.strokeDashoffset = '251';
+        ring.style.strokeDashoffset = '236';
       }
     }
   }
 
   async function keepPending() {
     if (pending) await commitMoment(pending);
-    discardPendingUrl();
+    discardPending();
   }
 
-  function discardPendingUrl() {
+  function discardPending() {
     if (pendingUrl) URL.revokeObjectURL(pendingUrl);
     setPendingUrl(null);
     setPending(null);
@@ -163,41 +165,96 @@ export default function Capture() {
   const ratio = ASPECT_RATIO[project.aspect];
 
   return (
-    <div className="screen">
-      <div className="topbar">
-        <button className="link" onClick={() => nav(`/p/${id}`)}>
-          Done
-        </button>
-        <h1 style={{ textAlign: 'center', fontSize: 15 }}>
-          {count} moment{count === 1 ? '' : 's'}
-        </h1>
-        <button
-          className="link"
-          aria-pressed={autoSave}
-          onClick={() => setAutoSave((v) => !v)}
-        >
-          {autoSave ? 'Auto-save on' : 'Auto-save off'}
-        </button>
-      </div>
-
+    <div className="screen dark">
       <div className="stage">
         <video ref={videoRef} playsInline muted autoPlay />
+
+        {/* Dims everything outside the chosen shape, so what you see is what
+            you get — the original crops the frame to black instead. */}
+        {/* Fills as much of the stage as the shape allows, rather than sitting
+            small in the middle. max-height shrinks it back when the shape is
+            taller than the stage. */}
         <div
-          className="frame"
-          style={{
-            width: ratio >= 1 ? '92%' : `${92 * ratio}%`,
-            aspectRatio: String(ratio),
-          }}
+          className="frame-guide"
+          style={{ '--r': String(ratio) } as React.CSSProperties}
         />
+
+        {error ? (
+          <div className="pill bad">{error}</div>
+        ) : !ready ? (
+          <div className="pill">Starting camera…</div>
+        ) : silent ? (
+          <div className="pill warn">That moment recorded almost no sound</div>
+        ) : (
+          <div className="pill">
+            {count} moment{count === 1 ? '' : 's'}
+            {project.bpm ? ` · ${project.bpm} BPM` : ''}
+          </div>
+        )}
+
+        <button
+          className="nav-btn"
+          onClick={() => nav(`/p/${id}`)}
+          style={{
+            position: 'absolute',
+            top: 'calc(var(--safe-t) + 8px)',
+            left: 8,
+            color: '#fff',
+            zIndex: 4,
+          }}
+        >
+          <span className="chev" aria-hidden>
+            ‹
+          </span>
+          Done
+        </button>
+
+        <button
+          className="round-btn"
+          onClick={() => setShowSettings((v) => !v)}
+          style={{
+            position: 'absolute',
+            top: 'calc(var(--safe-t) + 8px)',
+            right: 12,
+            zIndex: 4,
+          }}
+          aria-label="Capture settings"
+        >
+          ⋯
+        </button>
+
+        {showSettings && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 'calc(var(--safe-t) + 60px)',
+              right: 12,
+              zIndex: 4,
+              background: 'rgba(30,30,30,0.9)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              borderRadius: 12,
+              padding: '10px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              color: '#fff',
+              fontSize: 15,
+            }}
+          >
+            Auto-save
+            <Switch checked={autoSave} onChange={setAutoSave} />
+          </div>
+        )}
 
         {pending && pendingUrl && (
           <div className="review">
-            <video src={pendingUrl} autoPlay loop playsInline controls={false} />
-            <div className="actions">
-              <button className="btn-drop" onClick={discardPendingUrl}>
-                Discard
+            <video src={pendingUrl} autoPlay loop playsInline />
+            <div className="review-actions">
+              <button className="btn tinted" onClick={discardPending}>
+                Retake
               </button>
-              <button className="btn-keep" onClick={keepPending}>
+              <button className="btn filled" onClick={keepPending}>
                 Keep
               </button>
             </div>
@@ -205,30 +262,19 @@ export default function Capture() {
         )}
       </div>
 
-      <div className="controls">
-        {error && <div className="banner bad">{error}</div>}
-        {!ready && !error && (
-          <div className="banner warn">Starting the camera…</div>
-        )}
-        {silent && !error && (
-          <div className="banner warn">
-            That moment recorded almost no sound. Check the mic isn’t covered.
-          </div>
-        )}
-
+      <div className="capture-bar">
         <div className="meter" data-silent={silent}>
           <i ref={meterRef} />
         </div>
 
-        <div className="lenrow">
+        <div className="modes">
           {LENGTHS.map((ms) => {
-            // With a tempo set, offer beat multiples instead of round seconds,
-            // so every cut lands on the grid and the result looks edited.
+            // With a tempo set, offer beat multiples instead of round seconds
+            // so every cut lands on the grid.
             const actual = project.bpm ? snapToBeat(ms, project.bpm) : ms;
             return (
               <button
                 key={ms}
-                className="len"
                 aria-pressed={lengthMs === actual}
                 onClick={() => setLengthMs(actual)}
               >
@@ -237,56 +283,52 @@ export default function Capture() {
             );
           })}
         </div>
-        {project.bpm && (
-          <div className="dim" style={{ textAlign: 'center', fontSize: 12 }}>
-            Snapped to {project.bpm} BPM
-          </div>
-        )}
 
-        <div className="recrow">
+        <div className="shutter-row">
           <button
-            className="side"
+            className="round-btn"
             onClick={() => {
-              const s = sessionRef.current;
-              if (!s) return;
-              void s.flip().then((stream) => {
+              void sessionRef.current?.flip().then((stream) => {
                 if (videoRef.current) videoRef.current.srcObject = stream;
               });
             }}
+            aria-label="Flip camera"
           >
-            Flip
+            ⟲
           </button>
 
           <button
-            className="recbtn"
+            className="shutter"
             data-recording={recording}
             data-ready={ready}
             onClick={record}
             disabled={!ready || recording}
             aria-label="Record a moment"
           >
-            <svg width="86" height="86" viewBox="0 0 86 86">
+            <svg width="81" height="81" viewBox="0 0 81 81" aria-hidden>
               <circle
                 ref={ringRef}
-                cx="43"
-                cy="43"
-                r="40"
+                cx="40.5"
+                cy="40.5"
+                r="37.5"
                 fill="none"
-                stroke="#e5484d"
-                strokeWidth="3"
-                strokeDasharray="251"
-                strokeDashoffset="251"
+                stroke="#ff9f0a"
+                strokeWidth="3.5"
+                strokeDasharray="236"
+                strokeDashoffset="236"
               />
             </svg>
             <i />
           </button>
 
           <button
-            className="side"
+            className="round-btn right"
             onClick={() => sessionRef.current?.stopEarly()}
             disabled={!recording}
+            aria-label="Stop early"
+            style={{ opacity: recording ? 1 : 0.35 }}
           >
-            {recording ? 'Stop' : ''}
+            ■
           </button>
         </div>
       </div>

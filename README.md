@@ -95,6 +95,28 @@ Two things it checks that unit tests cannot:
   so only a real run proves it executes — including the `-loop 1` input path
   that stills depend on.
 
+## Interface
+
+Built to Apple's Human Interface Guidelines rather than styled by eye: system
+colour palette, the iOS type scale, 44pt minimum targets, inset grouped lists
+with content-aligned separators, segmented controls, switches, and sheets with
+a grabber. Browsing and editing follow the system appearance in both light and
+dark; capture is always dark, the way Camera is.
+
+Capture is modelled on the Camera app — shutter, mode selector, flip, and a
+dimmed overlay showing exactly which part of the frame the chosen shape keeps.
+
+Two interactions are load-bearing on a phone and were built with pointer
+events, not mouse or HTML5 drag:
+
+- **Swipe a row left to delete**, the gesture the original advertised as
+  "remove moments with the flick of a finger".
+- **Drag ≡ to reorder.** The first implementation used HTML5 drag-and-drop,
+  which never fires for touch on iOS — it worked in a desktop browser and was
+  silently dead on the target device. The e2e run now asserts reordering by
+  comparing moment ids, since rows are labelled by position and a successful
+  reorder leaves the visible text identical.
+
 ## Architecture
 
 - **`src/storage/journal.ts`** — every mutation is an append-only entry; state

@@ -11,6 +11,16 @@ import {
 import { planExport } from '../export/concat';
 import { useCloud } from '../cloud/useCloud';
 import { createInvite, ensureBlob, subscribeToProject } from '../cloud/sync';
+import {
+  BackButton,
+  NavBar,
+  Segmented,
+  Sheet,
+  SwipeToDelete,
+  Switch,
+  useScrolled,
+} from '../ui/components';
+import { useReorder } from '../ui/useReorder';
 
 const REENCODE_TEXT: Record<string, string> = {
   trimmed: 'Re-encoding trimmed moments…',
@@ -20,36 +30,11 @@ const REENCODE_TEXT: Record<string, string> = {
   imported: 'Re-encoding imported media…',
 };
 
-function MomentRow({
-  moment,
-  index,
-  locked,
-  shared,
-  onRemove,
-  onTrim,
-  onProps,
-  onDragStart,
-  onDragEnter,
-  onDragEnd,
-  dragging,
-}: {
-  moment: Moment;
-  index: number;
-  locked: boolean;
-  shared: boolean;
-  onRemove: () => void;
-  onTrim: (start: number, end: number | null) => void;
-  onProps: (props: { muted?: boolean; speed?: number }) => void;
-  onDragStart: () => void;
-  onDragEnter: () => void;
-  onDragEnd: () => void;
-  dragging: boolean;
-}) {
+function MomentThumb({ moment, shared }: { moment: Moment; shared: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    let revoked: string | null = null;
+    let made: string | null = null;
     let cancelled = false;
     // On a shared project the file may belong to a collaborator and not exist
     // locally yet, so fall through to the bucket.
@@ -58,161 +43,32 @@ function MomentRow({
       : getBlob(moment.blobKey);
     void load.then((b) => {
       if (!b || cancelled) return;
-      revoked = URL.createObjectURL(b);
-      setUrl(revoked);
+      made = URL.createObjectURL(b);
+      setUrl(made);
     });
     return () => {
       cancelled = true;
-      if (revoked) URL.revokeObjectURL(revoked);
+      if (made) URL.revokeObjectURL(made);
     };
   }, [moment.blobKey, moment.projectId, shared]);
 
-  const silent = moment.peakRms < 0.004;
-  const end = moment.trimEndMs ?? moment.durationMs;
-
-  return (
-    <li
-      className={`mrow${dragging ? ' dragging' : ''}`}
-      onDragEnter={onDragEnter}
-      onDragOver={(e) => e.preventDefault()}
-    >
-      <span className="idx">{index + 1}</span>
-      {url ? (
-        moment.kind === 'still' ? (
-          <img src={url} alt="" />
-        ) : (
-          <video src={url} muted playsInline preload="metadata" />
-        )
-      ) : (
-        <div className="mrow-ph" />
-      )}
-
-      <div className="info">
-        <div>
-          {(trimmedDurationMs(moment) / 1000).toFixed(1)}s
-          {(moment.speed ?? 1) !== 1 && ` · ${moment.speed}×`}
-          {moment.muted && ' · muted'}
-          {moment.interrupted && <span className="silent-flag"> · interrupted</span>}
-        </div>
-        {silent ? (
-          <div className="silent-flag">no sound recorded</div>
-        ) : (
-          <div className="dim" style={{ fontSize: 12 }}>
-            {moment.source === 'import'
-              ? moment.kind === 'still'
-                ? 'Photo'
-                : 'Imported clip'
-              : `${moment.facing === 'user' ? 'Front' : 'Back'} camera`}
-          </div>
-        )}
-
-        {open && !locked && (
-          <div className="tools">
-            {moment.kind !== 'still' && (
-              <>
-                <label className="toolrow">
-                  <span>Start</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={moment.durationMs}
-                    step={50}
-                    value={moment.trimStartMs}
-                    onChange={(e) =>
-                      onTrim(
-                        Math.min(Number(e.target.value), end - 100),
-                        moment.trimEndMs,
-                      )
-                    }
-                  />
-                </label>
-                <label className="toolrow">
-                  <span>End</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={moment.durationMs}
-                    step={50}
-                    value={end}
-                    onChange={(e) =>
-                      onTrim(
-                        moment.trimStartMs,
-                        Math.max(
-                          Number(e.target.value),
-                          moment.trimStartMs + 100,
-                        ),
-                      )
-                    }
-                  />
-                </label>
-              </>
-            )}
-
-            <div className="toolrow">
-              <span>Speed</span>
-              <div className="chips">
-                {[0.5, 1, 2].map((s) => (
-                  <button
-                    key={s}
-                    className="chip"
-                    aria-pressed={(moment.speed ?? 1) === s}
-                    onClick={() => onProps({ speed: s })}
-                  >
-                    {s}×
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="toolrow">
-              <span>Sound</span>
-              <div className="chips">
-                <button
-                  className="chip"
-                  aria-pressed={!moment.muted}
-                  onClick={() => onProps({ muted: false })}
-                >
-                  On
-                </button>
-                <button
-                  className="chip"
-                  aria-pressed={!!moment.muted}
-                  onClick={() => onProps({ muted: true })}
-                >
-                  Muted
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {!locked && (
-        <>
-          <button className="grip" onClick={() => setOpen((v) => !v)} aria-label="Trim">
-            ✂
-          </button>
-          <button className="grip" onClick={onRemove} aria-label="Delete moment">
-            ✕
-          </button>
-          <span
-            className="grip"
-            draggable
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            aria-label="Reorder"
-          >
-            ⠿
-          </span>
-        </>
-      )}
-    </li>
+  if (!url) return <div className="thumb lg" />;
+  return moment.kind === 'still' ? (
+    <img className="thumb lg" src={url} alt="" />
+  ) : (
+    <video className="thumb lg" src={url} muted playsInline preload="metadata" />
   );
+}
+
+function describe(m: Moment): string {
+  if (m.source === 'import') return m.kind === 'still' ? 'Photo' : 'Imported clip';
+  return `${m.facing === 'user' ? 'Front' : 'Back'} camera`;
 }
 
 export default function Editor() {
   const { id = '' } = useParams();
   const nav = useNavigate();
+  const { scrolled, onScroll } = useScrolled();
 
   const state = useApp((s) => s.state);
   const removeMoment = useApp((s) => s.removeMoment);
@@ -228,13 +84,18 @@ export default function Editor() {
   const renameProject = useApp((s) => s.renameProject);
 
   const project = state.projects[id];
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
+
   const [order, setOrder] = useState<string[]>([]);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [exportErr, setExportErr] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
-  const orderRef = useRef<string[]>([]);
+  const [importing, setImporting] = useState(false);
+
+  const importRef = useRef<HTMLInputElement>(null);
+  const musicRef = useRef<HTMLInputElement>(null);
+  const tapsRef = useRef<number[]>([]);
 
   const cloudConfigured = useCloud((s) => s.configured);
   const userId = useCloud((s) => s.userId);
@@ -246,13 +107,11 @@ export default function Editor() {
 
   const [shared, setShared] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
-  const importRef = useRef<HTMLInputElement>(null);
-  const musicRef = useRef<HTMLInputElement>(null);
-  const tapsRef = useRef<number[]>([]);
 
-  // Live collaboration: a collaborator appending a moment lands as an entry
-  // insert, which we pull and replay.
+  useEffect(() => {
+    if (project) setOrder(project.momentIds);
+  }, [project?.momentIds]);
+
   useEffect(() => {
     if (!shared || !userId) return;
     return subscribeToProject(id, () => {
@@ -260,12 +119,9 @@ export default function Editor() {
     });
   }, [shared, userId, id, syncNow, reload]);
 
-  useEffect(() => {
-    if (project) {
-      setOrder(project.momentIds);
-      orderRef.current = project.momentIds;
-    }
-  }, [project?.momentIds]);
+  const reorder = useReorder(order, setOrder, (next) => {
+    void reorderMoments(id, next);
+  });
 
   const moments = useMemo(
     () => order.map((mid) => state.moments[mid]).filter((m): m is Moment => !!m),
@@ -275,19 +131,9 @@ export default function Editor() {
   const totalMs = moments.reduce((s, m) => s + trimmedDurationMs(m), 0);
   const silentCount = moments.filter((m) => m.peakRms < 0.004).length;
   const plan = planExport(state, id);
+  const editingMoment = editing ? state.moments[editing] : null;
 
   if (!project) return null;
-
-  function move(from: number, to: number) {
-    setOrder((prev) => {
-      const next = [...prev];
-      const [item] = next.splice(from, 1);
-      next.splice(to, 0, item);
-      orderRef.current = next;
-      return next;
-    });
-    setDragIndex(to);
-  }
 
   async function runExport() {
     setExportErr(null);
@@ -303,104 +149,164 @@ export default function Editor() {
 
   return (
     <div className="screen">
-      <div className="topbar">
-        <button className="link" onClick={() => nav('/')}>
-          Glimpses
-        </button>
-        <h1 style={{ textAlign: 'center', fontSize: 16 }}>{project.name}</h1>
-        <button
-          className="link"
-          onClick={() => {
-            setDraftName(project.name);
-            setRenaming(true);
-          }}
-        >
-          Edit
-        </button>
-      </div>
+      <NavBar
+        title={project.name}
+        scrolled={scrolled}
+        large={false}
+        left={<BackButton label="Glimpses" onClick={() => nav('/')} />}
+        right={
+          <button
+            className="nav-btn right"
+            onClick={() => {
+              setDraftName(project.name);
+              setSettingsOpen(true);
+            }}
+          >
+            Settings
+          </button>
+        }
+      />
 
-      <div className="scroll">
-        <div className="pad">
-          <div className="dim">
-            {moments.length} moment{moments.length === 1 ? '' : 's'} ·{' '}
-            {(totalMs / 1000).toFixed(1)}s
-            {project.locked && ' · locked'}
-          </div>
-          {silentCount > 0 && (
-            <div className="banner warn" style={{ marginTop: 10 }}>
-              {silentCount} moment{silentCount > 1 ? 's' : ''} recorded no sound.
-            </div>
-          )}
-          {exportErr && (
-            <div className="banner bad" style={{ marginTop: 10 }}>
-              {exportErr}
-            </div>
-          )}
-          {progress && (
-            <>
-              <div className="dim" style={{ marginTop: 10 }}>
-                {progress.stage === 'loading' && 'Loading video engine…'}
-                {progress.stage === 'writing' && 'Preparing moments…'}
-                {progress.stage === 'trimming' && `Trimming ${progress.detail}…`}
-                {progress.stage === 'stitching' &&
-                  (progress.detail === 're-encoding'
-                    ? REENCODE_TEXT[plan.reencodeReason ?? 'mixed-sizes']
-                    : (progress.detail ?? 'Stitching…'))}
-                {progress.stage === 'reading' && 'Finishing…'}
-              </div>
-              <div className="progress">
-                <i style={{ width: `${(progress.ratio ?? 0.5) * 100}%` }} />
-              </div>
-            </>
-          )}
+      <div className="scroll" onScroll={onScroll}>
+        <div className="summary">
+          {moments.length} moment{moments.length === 1 ? '' : 's'} ·{' '}
+          {(totalMs / 1000).toFixed(1)}s
+          {project.locked && ' · locked'}
+          {moments.length > 0 &&
+            (plan.canStreamCopy
+              ? ' · exports instantly'
+              : ' · needs re-encoding')}
         </div>
 
+        {silentCount > 0 && (
+          <div className="banner warn">
+            {silentCount} moment{silentCount > 1 ? 's' : ''} recorded no sound.
+          </div>
+        )}
+        {exportErr && <div className="banner bad">{exportErr}</div>}
+
+        {progress && (
+          <div className="group">
+            <div className="group-header">
+              {progress.stage === 'loading' && 'Loading video engine…'}
+              {progress.stage === 'writing' && 'Preparing moments…'}
+              {progress.stage === 'trimming' && `Trimming ${progress.detail}…`}
+              {progress.stage === 'stitching' &&
+                (progress.detail === 're-encoding'
+                  ? REENCODE_TEXT[plan.reencodeReason ?? 'mixed-sizes']
+                  : 'Stitching…')}
+              {progress.stage === 'reading' && 'Finishing…'}
+            </div>
+            <div className="progress">
+              <i style={{ width: `${(progress.ratio ?? 0.5) * 100}%` }} />
+            </div>
+          </div>
+        )}
+
         {moments.length === 0 ? (
-          <div className="empty">No moments yet.</div>
+          <div className="empty">
+            <strong>No moments yet</strong>
+            Record or import something to begin.
+          </div>
         ) : (
-          <ul className="strip">
-            {moments.map((m, i) => (
-              <MomentRow
-                key={m.id}
-                moment={m}
-                index={i}
-                locked={project.locked}
-                shared={shared}
-                dragging={dragIndex === i}
-                onDragStart={() => setDragIndex(i)}
-                onDragEnter={() => {
-                  if (dragIndex !== null && dragIndex !== i) move(dragIndex, i);
-                }}
-                onDragEnd={() => {
-                  setDragIndex(null);
-                  void reorderMoments(id, orderRef.current);
-                }}
-                onRemove={() => void removeMoment(id, m.id)}
-                onTrim={(start, end) => void trimMoment(id, m.id, start, end)}
-                onProps={(props) => void setMomentProps(id, m.id, props)}
-              />
-            ))}
-          </ul>
+          <div className="group">
+            <ul className="list">
+              {moments.map((m, i) => {
+                const dragging = reorder.state.draggingId === m.id;
+                return (
+                  <li
+                    key={m.id}
+                    data-moment-id={m.id}
+                    style={
+                      dragging
+                        ? {
+                            transform: `translateY(${reorder.state.offsetY}px)`,
+                            position: 'relative',
+                            zIndex: 2,
+                          }
+                        : undefined
+                    }
+                  >
+                    <SwipeToDelete
+                      disabled={project.locked}
+                      onDelete={() => void removeMoment(id, m.id)}
+                    >
+                      <div className={`row inset-sep${dragging ? ' lifted' : ''}`}>
+                        <MomentThumb moment={m} shared={shared} />
+                        <button
+                          className="row-main"
+                          style={{ background: 'none', textAlign: 'left' }}
+                          onClick={() => !project.locked && setEditing(m.id)}
+                        >
+                          <div className="row-title">
+                            {i + 1}. {(trimmedDurationMs(m) / 1000).toFixed(1)}s
+                            {(m.speed ?? 1) !== 1 && ` · ${m.speed}×`}
+                            {m.muted && ' · muted'}
+                          </div>
+                          <div className="row-sub">
+                            {m.peakRms < 0.004 ? (
+                              <span className="flag">no sound recorded</span>
+                            ) : (
+                              describe(m)
+                            )}
+                            {m.interrupted && (
+                              <span className="flag"> · interrupted</span>
+                            )}
+                          </div>
+                        </button>
+
+                        {!project.locked && (
+                          <span
+                            className="grip"
+                            aria-label="Reorder"
+                            onPointerDown={(e) => reorder.begin(m.id, e)}
+                            onPointerMove={reorder.move}
+                            onPointerUp={reorder.end}
+                            onPointerCancel={reorder.end}
+                          >
+                            ≡
+                          </span>
+                        )}
+                      </div>
+                    </SwipeToDelete>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="group-footer">
+              Tap a moment to trim it or change its speed. Drag ≡ to reorder,
+              swipe left to delete.
+            </div>
+          </div>
         )}
       </div>
 
-      {!project.locked && (
-        <div
-          className="fabrow"
-          style={{ bottom: 'calc(var(--safe-b) + 76px)' }}
+      <div className="toolbar">
+        {!project.locked && (
+          <>
+            <button
+              className="btn tinted"
+              onClick={() => nav(`/p/${id}/capture`)}
+            >
+              Record
+            </button>
+            <button
+              className="btn tinted"
+              onClick={() => importRef.current?.click()}
+              disabled={importing}
+            >
+              {importing ? 'Importing…' : 'Import'}
+            </button>
+          </>
+        )}
+        <button
+          className="btn filled"
+          onClick={runExport}
+          disabled={!!progress || moments.length === 0}
         >
-          <button className="fab-inline" onClick={() => nav(`/p/${id}/capture`)}>
-            Record
-          </button>
-          <button
-            className="fab-inline alt"
-            onClick={() => importRef.current?.click()}
-            disabled={importing}
-          >
-            {importing ? 'Importing…' : 'Import'}
-          </button>
-        </div>
-      )}
+          {progress ? 'Exporting…' : 'Export'}
+        </button>
+      </div>
 
       {/* Opens the iOS photo picker. Videos and photos both land as moments. */}
       <input
@@ -428,114 +334,219 @@ export default function Editor() {
           }
         }}
       />
-      <button
-        className="fab"
-        style={{ background: 'var(--info)' }}
-        onClick={runExport}
-        disabled={!!progress || moments.length === 0}
-      >
-        {progress ? 'Exporting…' : 'Export & share'}
-      </button>
 
-      {renaming && (
-        <div className="sheet" onClick={() => setRenaming(false)}>
-          <div className="card" onClick={(e) => e.stopPropagation()}>
-            <h2>Glimpse settings</h2>
+      {/* ---------------------------------------------- per-moment editing */}
+      {editingMoment && (
+        <Sheet
+          title={`Moment ${order.indexOf(editingMoment.id) + 1}`}
+          onClose={() => setEditing(null)}
+          leftAction={
+            <button className="nav-btn" onClick={() => setEditing(null)}>
+              Done
+            </button>
+          }
+        >
+          {editingMoment.kind !== 'still' && (
+            <div className="group">
+              <div className="group-header">Trim</div>
+              <div className="list">
+                <div className="row">
+                  <span className="row-value" style={{ flex: '0 0 52px' }}>
+                    Start
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={editingMoment.durationMs}
+                    step={50}
+                    value={editingMoment.trimStartMs}
+                    onChange={(e) =>
+                      void trimMoment(
+                        id,
+                        editingMoment.id,
+                        Math.min(
+                          Number(e.target.value),
+                          (editingMoment.trimEndMs ?? editingMoment.durationMs) - 100,
+                        ),
+                        editingMoment.trimEndMs,
+                      )
+                    }
+                  />
+                </div>
+                <div className="row">
+                  <span className="row-value" style={{ flex: '0 0 52px' }}>
+                    End
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={editingMoment.durationMs}
+                    step={50}
+                    value={editingMoment.trimEndMs ?? editingMoment.durationMs}
+                    onChange={(e) =>
+                      void trimMoment(
+                        id,
+                        editingMoment.id,
+                        editingMoment.trimStartMs,
+                        Math.max(
+                          Number(e.target.value),
+                          editingMoment.trimStartMs + 100,
+                        ),
+                      )
+                    }
+                  />
+                </div>
+              </div>
+              <div className="group-footer">
+                {(trimmedDurationMs(editingMoment) / 1000).toFixed(2)}s of{' '}
+                {(editingMoment.durationMs / 1000).toFixed(2)}s
+              </div>
+            </div>
+          )}
+
+          <div className="group">
+            <div className="group-header">Speed</div>
+            <Segmented
+              options={[0.5, 1, 2] as const}
+              value={editingMoment.speed ?? 1}
+              onChange={(s) => void setMomentProps(id, editingMoment.id, { speed: s })}
+              format={(s) => `${s}×`}
+            />
+          </div>
+
+          <div className="group">
+            <ul className="list">
+              <li className="row">
+                <div className="row-main">
+                  <div className="row-title">Mute this moment</div>
+                </div>
+                <Switch
+                  checked={!!editingMoment.muted}
+                  onChange={(v) =>
+                    void setMomentProps(id, editingMoment.id, { muted: v })
+                  }
+                />
+              </li>
+            </ul>
+          </div>
+
+          <div className="group">
+            <ul className="list">
+              <li>
+                <button
+                  className="row destructive"
+                  onClick={() => {
+                    void removeMoment(id, editingMoment.id);
+                    setEditing(null);
+                  }}
+                >
+                  <div className="row-main">
+                    <div className="row-title">Delete moment</div>
+                  </div>
+                </button>
+              </li>
+            </ul>
+          </div>
+        </Sheet>
+      )}
+
+      {/* ------------------------------------------------ project settings */}
+      {settingsOpen && (
+        <Sheet
+          title="Glimpse Settings"
+          onClose={() => setSettingsOpen(false)}
+          leftAction={
+            <button className="nav-btn" onClick={() => setSettingsOpen(false)}>
+              Done
+            </button>
+          }
+        >
+          <div className="group">
+            <div className="group-header">Name</div>
             <input
               className="field"
               value={draftName}
               onChange={(e) => setDraftName(e.target.value)}
+              onBlur={() =>
+                void renameProject(id, draftName.trim() || project.name)
+              }
             />
-            <button
-              className="primary"
-              onClick={() => {
-                void renameProject(id, draftName.trim() || project.name);
-                setRenaming(false);
-              }}
-            >
-              Save name
-            </button>
-            <button
-              className="secondary"
-              onClick={() => {
-                void setLocked(id, !project.locked);
-                setRenaming(false);
-              }}
-            >
-              {project.locked ? 'Unlock this Glimpse' : 'Lock this Glimpse'}
-            </button>
+          </div>
 
-            <hr className="rule" />
-
-            <div className="toolrow">
-              <span>Soundtrack</span>
-              <div className="chips">
-                <button className="chip" onClick={() => musicRef.current?.click()}>
-                  {project.music ? 'Replace' : 'Add music'}
-                </button>
-                {project.music && (
-                  <button className="chip" onClick={() => void setMusic(id, null)}>
-                    Remove
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {project.music && (
-              <>
-                <div className="dim" style={{ fontSize: 13, marginBottom: 8 }}>
-                  {project.music.name}
-                </div>
-                <div className="toolrow">
-                  <span>Balance</span>
-                  <div className="chips">
-                    <button
-                      className="chip"
-                      aria-pressed={!project.music.duckClips}
-                      onClick={() =>
-                        void setMusic(id, { ...project.music!, duckClips: false })
-                      }
-                    >
-                      Voices lead
-                    </button>
-                    <button
-                      className="chip"
-                      aria-pressed={project.music.duckClips}
-                      onClick={() =>
-                        void setMusic(id, { ...project.music!, duckClips: true })
-                      }
-                    >
-                      Music leads
-                    </button>
+          <div className="group">
+            <div className="group-header">Soundtrack</div>
+            <ul className="list">
+              <li>
+                <button className="row tinted" onClick={() => musicRef.current?.click()}>
+                  <div className="row-main">
+                    <div className="row-title">
+                      {project.music ? 'Replace music' : 'Add music'}
+                    </div>
+                    {project.music && (
+                      <div className="row-sub">{project.music.name}</div>
+                    )}
                   </div>
-                </div>
-                <label className="toolrow">
-                  <span>Volume</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={project.music.volume}
-                    onChange={(e) =>
-                      void setMusic(id, {
-                        ...project.music!,
-                        volume: Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-              </>
-            )}
+                </button>
+              </li>
+              {project.music && (
+                <>
+                  <li className="row">
+                    <div className="row-main">
+                      <div className="row-title">Volume</div>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={project.music.volume}
+                      onChange={(e) =>
+                        void setMusic(id, {
+                          ...project.music!,
+                          volume: Number(e.target.value),
+                        })
+                      }
+                      style={{ flex: '0 0 150px' }}
+                    />
+                  </li>
+                  <li className="row">
+                    <div className="row-main">
+                      <div className="row-title">Music leads</div>
+                      <div className="row-sub">
+                        Off: music ducks under voices automatically
+                      </div>
+                    </div>
+                    <Switch
+                      checked={project.music.duckClips}
+                      onChange={(v) =>
+                        void setMusic(id, { ...project.music!, duckClips: v })
+                      }
+                    />
+                  </li>
+                  <li>
+                    <button
+                      className="row destructive"
+                      onClick={() => void setMusic(id, null)}
+                    >
+                      <div className="row-main">
+                        <div className="row-title">Remove music</div>
+                      </div>
+                    </button>
+                  </li>
+                </>
+              )}
+            </ul>
+          </div>
 
-            <div className="toolrow">
-              <span>Tempo</span>
-              <div className="chips">
+          <div className="group">
+            <div className="group-header">Tempo</div>
+            <ul className="list">
+              <li>
                 <button
-                  className="chip"
+                  className="row tinted"
                   onClick={() => {
-                    // Tapped, not detected. A wrong automatic guess is worse
-                    // than no guess, and tapping four beats is unambiguous.
+                    // Tapped, not detected: a wrong automatic guess is worse
+                    // than no guess, and four taps are unambiguous.
                     const now = performance.now();
                     const taps = tapsRef.current.filter((t) => now - t < 3000);
                     taps.push(now);
@@ -547,126 +558,153 @@ export default function Editor() {
                     }
                   }}
                 >
-                  Tap tempo
-                </button>
-                {project.bpm && (
-                  <button className="chip" onClick={() => void setBpm(id, null)}>
-                    {project.bpm} BPM — clear
-                  </button>
-                )}
-              </div>
-            </div>
-            {project.bpm && (
-              <div className="dim" style={{ fontSize: 12, marginBottom: 10 }}>
-                New moments will snap to {(60_000 / project.bpm / 1000).toFixed(2)}s
-                beats.
-              </div>
-            )}
-
-            <div className="toolrow">
-              <span>Quality</span>
-              <div className="chips">
-                {(['1080p', '720p'] as const).map((p) => (
-                  <button
-                    key={p}
-                    className="chip"
-                    aria-pressed={(project.exportPreset ?? '1080p') === p}
-                    onClick={() => void setExportPreset(id, p)}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <input
-              ref={musicRef}
-              type="file"
-              accept="audio/*"
-              hidden
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                e.target.value = '';
-                if (!file) return;
-                const blobKey = `music-${Date.now().toString(36)}`;
-                await putBlob(blobKey, file);
-                await setMusic(id, {
-                  blobKey,
-                  name: file.name,
-                  volume: 0.7,
-                  duckClips: false,
-                });
-              }}
-            />
-
-            {cloudConfigured && (
-              <>
-                <hr
-                  style={{
-                    border: 0,
-                    borderTop: '1px solid var(--line)',
-                    margin: '14px 0',
-                  }}
-                />
-                {cloudError && <div className="banner bad">{cloudError}</div>}
-
-                {!userId ? (
-                  <div className="dim" style={{ padding: '0 0 8px' }}>
-                    Sign in from an invite link to collaborate. Everything here
-                    works without an account.
+                  <div className="row-main">
+                    <div className="row-title">Tap tempo</div>
+                    <div className="row-sub">
+                      Tap along to the music a few times
+                    </div>
                   </div>
+                  <span className="row-value">
+                    {project.bpm ? `${project.bpm} BPM` : 'Off'}
+                  </span>
+                </button>
+              </li>
+              {project.bpm && (
+                <li>
+                  <button className="row" onClick={() => void setBpm(id, null)}>
+                    <div className="row-main">
+                      <div className="row-title">Clear tempo</div>
+                    </div>
+                  </button>
+                </li>
+              )}
+            </ul>
+            <div className="group-footer">
+              With a tempo set, new moments snap to the beat so cuts land in
+              time with the music.
+            </div>
+          </div>
+
+          <div className="group">
+            <div className="group-header">Export quality</div>
+            <Segmented
+              options={['1080p', '720p'] as const}
+              value={project.exportPreset ?? '1080p'}
+              onChange={(p) => void setExportPreset(id, p)}
+            />
+          </div>
+
+          <div className="group">
+            <ul className="list">
+              <li className="row">
+                <div className="row-main">
+                  <div className="row-title">Lock this Glimpse</div>
+                  <div className="row-sub">
+                    Prevents accidental edits and deletion
+                  </div>
+                </div>
+                <Switch
+                  checked={project.locked}
+                  onChange={(v) => void setLocked(id, v)}
+                />
+              </li>
+            </ul>
+          </div>
+
+          {cloudConfigured && (
+            <div className="group">
+              <div className="group-header">Collaboration</div>
+              {cloudError && <div className="banner bad">{cloudError}</div>}
+              <ul className="list">
+                {!userId ? (
+                  <li className="row">
+                    <div className="row-main">
+                      <div className="row-sub">
+                        Sign in from an invite link to collaborate. Everything
+                        else works without an account.
+                      </div>
+                    </div>
+                  </li>
                 ) : inviteLink ? (
-                  <>
-                    <input
-                      className="field"
-                      readOnly
-                      value={inviteLink}
-                      onFocus={(e) => e.currentTarget.select()}
-                    />
+                  <li>
                     <button
-                      className="secondary"
+                      className="row tinted"
+                      onClick={() => void navigator.clipboard?.writeText(inviteLink)}
+                    >
+                      <div className="row-main">
+                        <div className="row-title">Copy invite link</div>
+                        <div className="row-sub">{inviteLink}</div>
+                      </div>
+                    </button>
+                  </li>
+                ) : (
+                  <li>
+                    <button
+                      className="row tinted"
+                      disabled={cloudBusy}
                       onClick={() => {
-                        void navigator.clipboard?.writeText(inviteLink);
+                        void (async () => {
+                          await shareProject(id, project.name, project.aspect);
+                          setShared(true);
+                          setInviteLink(await createInvite(id));
+                        })();
                       }}
                     >
-                      Copy invite link
+                      <div className="row-main">
+                        <div className="row-title">
+                          {cloudBusy ? 'Sharing…' : 'Share this Glimpse'}
+                        </div>
+                        <div className="row-sub">
+                          Others can add their own moments
+                        </div>
+                      </div>
                     </button>
-                  </>
-                ) : (
-                  <button
-                    className="secondary"
-                    disabled={cloudBusy}
-                    onClick={() => {
-                      void (async () => {
-                        await shareProject(id, project.name, project.aspect);
-                        setShared(true);
-                        setInviteLink(await createInvite(id));
-                      })();
-                    }}
-                  >
-                    {cloudBusy
-                      ? 'Sharing…'
-                      : shared
-                        ? 'Create another invite link'
-                        : 'Share this Glimpse'}
-                  </button>
+                  </li>
                 )}
-              </>
-            )}
-            <button
-              className="secondary"
-              style={{ color: 'var(--accent)' }}
-              onClick={() => {
-                if (confirm(`Delete “${project.name}” and all its moments?`)) {
-                  void deleteProject(id);
-                  nav('/');
-                }
-              }}
-            >
-              Delete Glimpse
-            </button>
+              </ul>
+            </div>
+          )}
+
+          <div className="group">
+            <ul className="list">
+              <li>
+                <button
+                  className="row destructive"
+                  onClick={() => {
+                    if (confirm(`Delete “${project.name}” and all its moments?`)) {
+                      void deleteProject(id);
+                      nav('/');
+                    }
+                  }}
+                >
+                  <div className="row-main">
+                    <div className="row-title">Delete Glimpse</div>
+                  </div>
+                </button>
+              </li>
+            </ul>
           </div>
-        </div>
+
+          <input
+            ref={musicRef}
+            type="file"
+            accept="audio/*"
+            hidden
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              const blobKey = `music-${Date.now().toString(36)}`;
+              await putBlob(blobKey, file);
+              await setMusic(id, {
+                blobKey,
+                name: file.name,
+                volume: 0.7,
+                duckClips: false,
+              });
+            }}
+          />
+        </Sheet>
       )}
     </div>
   );
