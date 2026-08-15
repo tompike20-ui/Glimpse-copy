@@ -8,6 +8,7 @@ import {
   shareVideo,
   type ExportProgress,
 } from '../export/exporter';
+import { planExport } from '../export/concat';
 import { useCloud } from '../cloud/useCloud';
 import { createInvite, ensureBlob, subscribeToProject } from '../cloud/sync';
 
@@ -188,6 +189,7 @@ export default function Editor() {
 
   const totalMs = moments.reduce((s, m) => s + trimmedDurationMs(m), 0);
   const silentCount = moments.filter((m) => m.peakRms < 0.004).length;
+  const plan = planExport(state, id);
 
   if (!project) return null;
 
@@ -256,7 +258,11 @@ export default function Editor() {
                 {progress.stage === 'writing' && 'Preparing moments…'}
                 {progress.stage === 'trimming' && `Trimming ${progress.detail}…`}
                 {progress.stage === 'stitching' &&
-                  (progress.detail ?? 'Stitching…')}
+                  (progress.detail === 're-encoding'
+                    ? plan.reencodeReason === 'mixed-sizes'
+                      ? 'Re-encoding — this Glimpse mixes frame sizes, so it cannot be stitched instantly…'
+                      : 'Re-encoding trimmed moments…'
+                    : (progress.detail ?? 'Stitching…'))}
                 {progress.stage === 'reading' && 'Finishing…'}
               </div>
               <div className="progress">

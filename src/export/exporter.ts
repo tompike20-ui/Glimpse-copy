@@ -150,11 +150,15 @@ export async function exportProject(
   written.push('list.txt');
 
   const out = 'out.mp4';
-  let streamCopied = true;
+  // Only attempt the fast path when the plan says the inputs are compatible;
+  // a doomed -c copy pass costs a full read of every segment before failing.
+  let streamCopied = plan.canStreamCopy;
   try {
+    if (!plan.canStreamCopy) throw new Error(plan.reencodeReason ?? 'incompatible');
     await ff.exec(streamCopyArgs(out));
   } catch {
-    // Mismatched parameters between segments. Fall back to a real encode.
+    // Either the plan ruled it out, or segments disagreed in some way the
+    // stored metadata did not capture. Either way, encode for real.
     streamCopied = false;
     onProgress?.({ stage: 'stitching', detail: 're-encoding' });
     await ff.exec([

@@ -4,17 +4,28 @@ import { trimmedDurationMs } from '../types';
 export interface ExportPlan {
   moments: Moment[];
   /**
-   * True when every moment is used whole. Untrimmed clips from one held
-   * stream share encoder parameters, so ffmpeg can stitch them with `-c copy`
-   * and skip re-encoding entirely — the difference between an instant export
-   * and a minute of work on a phone.
+   * True when ffmpeg can stitch with `-c copy` and skip re-encoding entirely —
+   * the difference between an instant export and a minute of work on a phone.
+   *
+   * Two conditions. Every moment must be used whole, and every moment must
+   * share the same frame size. Moments from one held stream satisfy both by
+   * construction, but flipping to the front camera can change resolution
+   * mid-project, and the concat demuxer refuses mismatched inputs.
    */
   canStreamCopy: boolean;
+  /** Why the fast path is unavailable, for the UI to explain the wait. */
+  reencodeReason: 'trimmed' | 'mixed-sizes' | null;
   totalMs: number;
 }
 
 export function isUntrimmed(m: Moment): boolean {
   return m.trimStartMs === 0 && (m.trimEndMs === null || m.trimEndMs >= m.durationMs);
+}
+
+export function uniformSize(moments: Moment[]): boolean {
+  if (moments.length < 2) return true;
+  const { width, height } = moments[0];
+  return moments.every((m) => m.width === width && m.height === height);
 }
 
 export function planExport(state: AppState, projectId: string): ExportPlan {
@@ -23,9 +34,16 @@ export function planExport(state: AppState, projectId: string): ExportPlan {
     .map((id) => state.moments[id])
     .filter((m): m is Moment => !!m);
 
+  const trimmed = !moments.every(isUntrimmed);
+  const mixed = !uniformSize(moments);
+  // Trimming is reported first: it forces a re-encode of the cut segments
+  // regardless of whether sizes also differ.
+  const reencodeReason = trimmed ? 'trimmed' : mixed ? 'mixed-sizes' : null;
+
   return {
     moments,
-    canStreamCopy: moments.every(isUntrimmed),
+    canStreamCopy: reencodeReason === null,
+    reencodeReason,
     totalMs: moments.reduce((sum, m) => sum + trimmedDurationMs(m), 0),
   };
 }

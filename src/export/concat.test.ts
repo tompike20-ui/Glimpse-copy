@@ -6,6 +6,7 @@ import {
   planExport,
   streamCopyArgs,
   trimArgs,
+  uniformSize,
 } from './concat';
 import { replay, type JournalEntry } from '../storage/journal';
 import type { Moment } from '../types';
@@ -52,6 +53,35 @@ describe('export planning', () => {
       'p1',
     );
     expect(plan.canStreamCopy).toBe(false);
+    expect(plan.reencodeReason).toBe('trimmed');
+  });
+
+  it('drops off the stream-copy path when frame sizes differ', () => {
+    // Flipping to the front camera mid-project can change resolution, and the
+    // concat demuxer refuses mismatched inputs.
+    const plan = planExport(
+      stateWith([moment('m1'), moment('m2', { width: 1280, height: 720 })]),
+      'p1',
+    );
+    expect(plan.canStreamCopy).toBe(false);
+    expect(plan.reencodeReason).toBe('mixed-sizes');
+  });
+
+  it('reports trimming first when a project is both trimmed and mixed', () => {
+    const plan = planExport(
+      stateWith([
+        moment('m1', { trimStartMs: 100 }),
+        moment('m2', { width: 1280, height: 720 }),
+      ]),
+      'p1',
+    );
+    expect(plan.reencodeReason).toBe('trimmed');
+  });
+
+  it('keeps the fast path for a single moment regardless of size', () => {
+    const plan = planExport(stateWith([moment('m1', { width: 640, height: 480 })]), 'p1');
+    expect(plan.canStreamCopy).toBe(true);
+    expect(uniformSize(plan.moments)).toBe(true);
   });
 
   it('counts only the trimmed span in total duration', () => {
