@@ -45,6 +45,39 @@ const MIME_CANDIDATES = [
   'video/webm',
 ];
 
+/**
+ * Read a recording's true duration from the file itself.
+ *
+ * The wall-clock timer is not good enough: asking for 1000 ms on iOS 18.7
+ * reliably produces a 1090 ms file, and trusting the timer would cap the trim
+ * UI ~90 ms short of the footage that actually exists. Safari sometimes
+ * reports Infinity or NaN for MediaRecorder output, so the caller's estimate
+ * remains the fallback.
+ */
+export function measureDuration(blob: Blob, fallbackMs: number): Promise<number> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement('video');
+    let settled = false;
+
+    const finish = (ms: number) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      resolve(Math.round(ms));
+    };
+
+    v.preload = 'metadata';
+    v.onloadedmetadata = () => {
+      const d = v.duration;
+      finish(Number.isFinite(d) && d > 0 ? d * 1000 : fallbackMs);
+    };
+    v.onerror = () => finish(fallbackMs);
+    setTimeout(() => finish(fallbackMs), 3000);
+    v.src = url;
+  });
+}
+
 export function pickMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return '';
   for (const m of MIME_CANDIDATES) {
@@ -108,9 +141,13 @@ export class CaptureSession {
       track.addEventListener('ended', () =>
         this.onInterrupt?.(`${track.kind} track ended`),
       );
-      track.addEventListener('mute', () =>
-        this.onInterrupt?.(`${track.kind} track muted`),
-      );
+      // Measured on iOS 18.7: backgrounding the app mutes both tracks and
+      // unmutes them on return, without ending them. That is normal app
+      // switching, not a fault, so it is only worth reporting if it happened
+      // mid-moment — where it actually cost footage.
+      track.addEventListener('mute', () => {
+        if (this.recording) this.onInterrupt?.(`${track.kind} track muted`);
+      });
     }
 
     // One AudioContext for the session, feeding the on-screen level meter.
@@ -204,8 +241,17 @@ export class CaptureSession {
       rec.ondataavailable = (e) => {
         if (!e.data?.size) return;
         chunks.push(e.data);
-        // Fire-and-forget: never let disk latency stall the recorder.
-        void putChunk(blobKey, seq++, e.data);
+        // Only chunks that arrive while still recording are worth persisting:
+        // they are the ones a crash would otherwise lose. The final chunk is
+        // redundant, because the assembled blob is committed straight after.
+        //
+        // On iOS this branch never runs — Safari ignores the timeslice for
+        // mp4 and emits a single chunk at stop (verified on iOS 18.7), so
+        // there is no partial-moment recovery on iPhone. The exposure is one
+        // in-flight moment; the journal still protects everything already
+        // captured. Writing the chunk anyway would double every moment's disk
+        // traffic for nothing.
+        if (rec.state === 'recording') void putChunk(blobKey, seq++, e.data);
       };
       rec.onerror = () => reject(new Error('recorder error'));
       rec.onstop = () => resolve();
@@ -232,11 +278,13 @@ export class CaptureSession {
     // Chunks have served their purpose; the assembled blob is authoritative.
     await clearPending(blobKey);
 
+    const measured = await measureDuration(blob, Math.min(elapsed, durationMs));
+
     return {
       blobKey,
       blob,
       mimeType,
-      durationMs: Math.round(Math.min(elapsed, durationMs)),
+      durationMs: measured,
       width: settings.width ?? 1920,
       height: settings.height ?? 1080,
       facing: this.facing,

@@ -33,7 +33,35 @@ be granted persistent storage, so running it in a tab risks losing your work.
 | 2s / 3s / custom lengths behind Glimpse Pro | All lengths free |
 | Front camera crops half the frame to black | Aspect is fitted, not cropped, on both cameras |
 | Forced outro card, even on Pro | None |
-| Capture-only, no recovery | Chunks flushed to disk mid-recording and salvaged after a crash |
+| Capture-only, no recovery | Append-only journal replayed on launch; a crash cannot corrupt a project |
+
+## Measured on device
+
+iPhone, iOS 18.7, installed to the home screen. These are results, not
+assumptions:
+
+| | |
+|---|---|
+| Consecutive-clip audio | **5 of 5 clips carried audio**, track `live` before and after each; the original's headline bug does not reproduce |
+| Recording format | `video/mp4` → H.264 Constrained Baseline + AAC 48 kHz |
+| `-c copy` concat | **377 ms** for five clips |
+| ffmpeg core load | 7.4 s first time, then service-worker cached |
+| Storage quota | **38.4 GB**, `persist()` granted |
+| Web Share with files | Supported — *Save Video* reaches Photos |
+| `SharedArrayBuffer` | Absent, as expected; the single-threaded core is mandatory |
+| Clip size | ~1.5 MB per second at 1080p (~10–12 Mbps) |
+
+Two behaviours worth knowing about:
+
+- **Safari ignores the MediaRecorder timeslice for mp4** and emits one chunk at
+  stop, so there is **no partial-moment recovery on iPhone**. A crash mid-record
+  loses that moment. Everything already captured is safe, because the journal is
+  what protects the project. Chunks are only persisted when they arrive while
+  still recording, which on iOS means never — writing them would double every
+  moment's disk traffic for no benefit.
+- **Backgrounding mutes the camera and mic tracks rather than ending them**, and
+  they unmute on return. The session survives app switching, so a mute is only
+  reported as an interruption if it happened mid-moment.
 
 ## Development
 
@@ -100,18 +128,19 @@ replay the union. There is no diffing and no merge algorithm. The Supabase SDK
 is dynamically imported, so users who never sign in do not pay for it at
 startup.
 
-**Storage cost, honestly:** moment files upload at full quality. One-second
-1080p clips are roughly 1 MB each, so a 60-moment Glimpse is around 60 MB
-against Supabase's 1 GB free tier — call it a dozen or so shared Glimpses.
+**Storage cost, honestly:** moment files upload at full quality. Measured on
+device, one-second 1080p clips are ~1.5 MB, so a 60-moment Glimpse is roughly
+90 MB against Supabase's 1 GB free tier — call it ten shared Glimpses.
 Generating smaller proxies would mean a full re-encode per moment on the phone,
 which costs more in battery and time than it saves in bytes. If you outgrow the
 free tier, Cloudflare R2 (10 GB free, no egress fees) is the migration target.
 
 ## Phase 0 spike
 
-[`public/spike/`](public/spike/) is a throwaway diagnostic page, kept because it
-is the only way to measure real iOS Safari behaviour — no CI can run it. It
-reports codec support, actual storage quota, `persist()` grant, whether audio
-survives five consecutive clips, and ffmpeg concat timing.
+[`public/spike/`](public/spike/) is the diagnostic page that produced the
+measurements above. Kept rather than deleted, because it is the only way to
+check real iOS Safari behaviour — no CI can run it — and it is worth re-running
+after an iOS release.
 
-Live at `/Glimpse-copy/spike/`.
+Live at `/Glimpse-copy/spike/`. Install to the home screen first; two of its
+checks report differently in a browser tab.
