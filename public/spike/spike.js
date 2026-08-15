@@ -346,8 +346,8 @@
     // that chunk is vendored alongside it.
     var abs = function (p) { return new URL(p, location.href).href; };
     return ffmpeg.load({
-      coreURL: abs('./vendor/ffmpeg-core.js'),
-      wasmURL: abs('./vendor/ffmpeg-core.wasm')
+      coreURL: abs('../vendor/ffmpeg-core.js'),
+      wasmURL: abs('../vendor/ffmpeg-core.wasm')
     });
   }
 
