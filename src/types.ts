@@ -75,15 +75,31 @@ export interface Project {
   exportPreset?: ExportPreset;
 }
 
+/**
+ * A deleted moment, kept rather than erased. Swiping a row is the easiest
+ * gesture in the app and it used to destroy footage immediately, which is
+ * indefensible for something whose whole promise is that nothing gets lost.
+ */
+export interface TrashedMoment {
+  moment: Moment;
+  deletedAt: number;
+  /** Position it held, so restoring puts it back where it was. */
+  index: number;
+}
+
 export interface AppState {
   projects: Record<string, Project>;
   moments: Record<string, Moment>;
   projectOrder: string[];
+  trash: Record<string, TrashedMoment>;
 }
 
 export function emptyState(): AppState {
-  return { projects: {}, moments: {}, projectOrder: [] };
+  return { projects: {}, moments: {}, projectOrder: [], trash: {} };
 }
+
+/** How long a deleted moment is recoverable before its file is purged. */
+export const TRASH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Effective playback length of a moment after trimming and speed. */
 export function trimmedDurationMs(m: Moment): number {

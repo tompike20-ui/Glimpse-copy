@@ -6,9 +6,9 @@ import type {
   Moment,
   MusicTrack,
 } from '../types';
-import { emptyState } from '../types';
+import { emptyState, TRASH_TTL_MS } from '../types';
 import { normaliseImage, probeVideo } from '../import/media';
-import { apply, type JournalEntry } from '../storage/journal';
+import { apply, expiredTrash, type JournalEntry } from '../storage/journal';
 import {
   appendEntry,
   assemblePending,
@@ -44,6 +44,9 @@ interface Store {
 
   addMoment: (m: Moment, blob: Blob) => Promise<void>;
   removeMoment: (projectId: string, momentId: string) => Promise<void>;
+  restoreMoment: (projectId: string, momentId: string) => Promise<void>;
+  purgeMoment: (momentId: string) => Promise<void>;
+  emptyTrash: () => Promise<void>;
   reorderMoments: (projectId: string, momentIds: string[]) => Promise<void>;
   trimMoment: (
     projectId: string,
@@ -106,6 +109,13 @@ export const useApp = create<Store>((set, get) => {
       }
       if (recovered.length) set({ recovered });
 
+      // Anything past its recovery window goes now, which is the only point
+      // at which this app deletes video on its own.
+      for (const { momentId, blobKey } of expiredTrash(state, TRASH_TTL_MS)) {
+        await commit({ t: 'moment.purge', momentId, ts: Date.now() });
+        await deleteBlob(blobKey).catch(() => {});
+      }
+
       // Orphans are reported, never silently deleted — they are video.
       const orphans = await findOrphanBlobs(state);
       if (orphans.length) {
@@ -132,13 +142,9 @@ export const useApp = create<Store>((set, get) => {
     },
 
     async deleteProject(id) {
-      const project = get().state.projects[id];
-      const keys =
-        project?.momentIds
-          .map((mid) => get().state.moments[mid]?.blobKey)
-          .filter((k): k is string => !!k) ?? [];
+      // Its moments move to the trash rather than being erased, so deleting
+      // the wrong Glimpse stays recoverable for the same window.
       await commit({ t: 'project.delete', id, ts: Date.now() });
-      for (const k of keys) await deleteBlob(k).catch(() => {});
       void get().refreshQuota();
     },
 
@@ -150,11 +156,26 @@ export const useApp = create<Store>((set, get) => {
       void get().refreshQuota();
     },
 
+    /** Non-destructive: the file survives until the moment is purged. */
     async removeMoment(projectId, momentId) {
-      const key = get().state.moments[momentId]?.blobKey;
       await commit({ t: 'moment.remove', projectId, momentId, ts: Date.now() });
+    },
+
+    async restoreMoment(projectId, momentId) {
+      await commit({ t: 'moment.restore', projectId, momentId, ts: Date.now() });
+    },
+
+    async purgeMoment(momentId) {
+      const key = get().state.trash[momentId]?.moment.blobKey;
+      await commit({ t: 'moment.purge', momentId, ts: Date.now() });
       if (key) await deleteBlob(key).catch(() => {});
       void get().refreshQuota();
+    },
+
+    async emptyTrash() {
+      for (const momentId of Object.keys(get().state.trash)) {
+        await get().purgeMoment(momentId);
+      }
     },
 
     async reorderMoments(projectId, momentIds) {

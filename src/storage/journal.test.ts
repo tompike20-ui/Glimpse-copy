@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { apply, liveBlobKeys, replay, type JournalEntry } from './journal';
+import {
+  apply,
+  expiredTrash,
+  liveBlobKeys,
+  replay,
+  type JournalEntry,
+} from './journal';
 import { emptyState, type Moment } from '../types';
 
 const ts = 1;
@@ -124,5 +130,94 @@ describe('journal replay', () => {
     ]);
     expect(liveBlobKeys(state)).toEqual(new Set(['blob-a']));
     expect(liveBlobKeys(emptyState()).size).toBe(0);
+  });
+});
+
+describe('trash', () => {
+  const withThree = (): JournalEntry[] => [
+    createP,
+    { t: 'moment.add', moment: moment('m1', 'p1'), ts },
+    { t: 'moment.add', moment: moment('m2', 'p1'), ts },
+    { t: 'moment.add', moment: moment('m3', 'p1'), ts },
+  ];
+
+  it('deleting a moment moves it to the trash rather than erasing it', () => {
+    const state = replay([
+      ...withThree(),
+      { t: 'moment.remove', projectId: 'p1', momentId: 'm2', ts },
+    ]);
+    expect(state.projects.p1.momentIds).toEqual(['m1', 'm3']);
+    expect(state.moments.m2).toBeUndefined();
+    expect(state.trash.m2.moment.id).toBe('m2');
+    expect(state.trash.m2.index).toBe(1);
+  });
+
+  it('keeps a trashed moment’s file live so it is not swept up as an orphan', () => {
+    // The whole point of the trash is that the video still exists.
+    const state = replay([
+      ...withThree(),
+      { t: 'moment.remove', projectId: 'p1', momentId: 'm2', ts },
+    ]);
+    expect(liveBlobKeys(state).has('b-m2')).toBe(true);
+  });
+
+  it('restores a moment to the position it held', () => {
+    const state = replay([
+      ...withThree(),
+      { t: 'moment.remove', projectId: 'p1', momentId: 'm2', ts },
+      { t: 'moment.restore', projectId: 'p1', momentId: 'm2', ts },
+    ]);
+    expect(state.projects.p1.momentIds).toEqual(['m1', 'm2', 'm3']);
+    expect(state.trash.m2).toBeUndefined();
+  });
+
+  it('clamps the restore position when the list has since shrunk', () => {
+    const state = replay([
+      ...withThree(),
+      { t: 'moment.remove', projectId: 'p1', momentId: 'm3', ts },
+      { t: 'moment.remove', projectId: 'p1', momentId: 'm1', ts },
+      { t: 'moment.remove', projectId: 'p1', momentId: 'm2', ts },
+      { t: 'moment.restore', projectId: 'p1', momentId: 'm3', ts },
+    ]);
+    expect(state.projects.p1.momentIds).toEqual(['m3']);
+  });
+
+  it('purging drops it from the trash for good', () => {
+    const state = replay([
+      ...withThree(),
+      { t: 'moment.remove', projectId: 'p1', momentId: 'm2', ts },
+      { t: 'moment.purge', momentId: 'm2', ts },
+    ]);
+    expect(state.trash.m2).toBeUndefined();
+    expect(liveBlobKeys(state).has('b-m2')).toBe(false);
+  });
+
+  it('deleting a project trashes its moments instead of destroying them', () => {
+    const state = replay([...withThree(), { t: 'project.delete', id: 'p1', ts }]);
+    expect(state.projects.p1).toBeUndefined();
+    expect(Object.keys(state.trash).sort()).toEqual(['m1', 'm2', 'm3']);
+    expect(liveBlobKeys(state).size).toBe(3);
+  });
+
+  it('restoring into a project that no longer exists is ignored', () => {
+    const state = replay([
+      ...withThree(),
+      { t: 'project.delete', id: 'p1', ts },
+      { t: 'moment.restore', projectId: 'p1', momentId: 'm1', ts },
+    ]);
+    expect(state.trash.m1).toBeDefined();
+  });
+
+  it('reports only trash past its recovery window', () => {
+    const now = 1_000_000_000_000;
+    const ttl = 1000;
+    const state = replay([
+      ...withThree(),
+      { t: 'moment.remove', projectId: 'p1', momentId: 'm1', ts: now - 5000 },
+      { t: 'moment.remove', projectId: 'p1', momentId: 'm2', ts: now - 100 },
+    ]);
+    const expired = expiredTrash(state, ttl, now);
+    expect(expired.map((e) => e.momentId)).toEqual(['m1']);
+    expect(expired[0].blobKey).toBe('b-m1');
   });
 });

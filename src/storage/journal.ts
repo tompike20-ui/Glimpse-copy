@@ -51,7 +51,9 @@ export type JournalEntry =
     } & Base)
   | ({ t: 'project.music'; id: string; music: MusicTrack | null } & Base)
   | ({ t: 'project.bpm'; id: string; bpm: number | null } & Base)
-  | ({ t: 'project.exportPreset'; id: string; preset: ExportPreset } & Base);
+  | ({ t: 'project.exportPreset'; id: string; preset: ExportPreset } & Base)
+  | ({ t: 'moment.restore'; projectId: string; momentId: string } & Base)
+  | ({ t: 'moment.purge'; momentId: string } & Base);
 
 /** Applies one entry. Unknown or inapplicable entries are ignored, not fatal. */
 export function apply(state: AppState, e: JournalEntry): AppState {
@@ -104,10 +106,18 @@ export function apply(state: AppState, e: JournalEntry): AppState {
       const projects = { ...state.projects };
       delete projects[e.id];
       const moments = { ...state.moments };
-      for (const id of p.momentIds) delete moments[id];
+      const trash = { ...state.trash };
+      // Its moments go to the trash as well, so deleting the wrong Glimpse
+      // is survivable for as long as anything else is.
+      p.momentIds.forEach((id, index) => {
+        const m = moments[id];
+        if (m) trash[id] = { moment: m, deletedAt: e.ts, index };
+        delete moments[id];
+      });
       return {
         projects,
         moments,
+        trash,
         projectOrder: state.projectOrder.filter((id) => id !== e.id),
       };
     }
@@ -132,12 +142,22 @@ export function apply(state: AppState, e: JournalEntry): AppState {
 
     case 'moment.remove': {
       const p = state.projects[e.projectId];
-      if (!p) return state;
+      const m = state.moments[e.momentId];
+      if (!p || !m) return state;
       const moments = { ...state.moments };
       delete moments[e.momentId];
       return {
         ...state,
         moments,
+        // Held, not erased. The file stays on disk until it is purged.
+        trash: {
+          ...state.trash,
+          [e.momentId]: {
+            moment: m,
+            deletedAt: e.ts,
+            index: p.momentIds.indexOf(e.momentId),
+          },
+        },
         projects: {
           ...state.projects,
           [p.id]: {
@@ -147,6 +167,33 @@ export function apply(state: AppState, e: JournalEntry): AppState {
           },
         },
       };
+    }
+
+    case 'moment.restore': {
+      const p = state.projects[e.projectId];
+      const t = state.trash[e.momentId];
+      if (!p || !t) return state;
+      const trash = { ...state.trash };
+      delete trash[e.momentId];
+      // Back to where it was, clamped in case the list has since shrunk.
+      const ids = [...p.momentIds];
+      ids.splice(Math.min(Math.max(0, t.index), ids.length), 0, e.momentId);
+      return {
+        ...state,
+        trash,
+        moments: { ...state.moments, [e.momentId]: t.moment },
+        projects: {
+          ...state.projects,
+          [p.id]: { ...p, momentIds: ids, updatedAt: e.ts },
+        },
+      };
+    }
+
+    case 'moment.purge': {
+      if (!state.trash[e.momentId]) return state;
+      const trash = { ...state.trash };
+      delete trash[e.momentId];
+      return { ...state, trash };
     }
 
     case 'moment.reorder': {
@@ -251,5 +298,15 @@ export function liveBlobKeys(state: AppState): Set<string> {
   for (const p of Object.values(state.projects)) {
     if (p.music?.blobKey) keys.add(p.music.blobKey);
   }
+  // Trashed moments still own their files until purged, so they must not be
+  // reported as orphans and swept up.
+  for (const t of Object.values(state.trash)) keys.add(t.moment.blobKey);
   return keys;
+}
+
+/** Trashed moments whose recovery window has passed. */
+export function expiredTrash(state: AppState, ttlMs: number, now = Date.now()) {
+  return Object.entries(state.trash)
+    .filter(([, t]) => now - t.deletedAt > ttlMs)
+    .map(([id, t]) => ({ momentId: id, blobKey: t.moment.blobKey }));
 }

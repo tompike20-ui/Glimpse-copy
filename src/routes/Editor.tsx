@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../store/useApp';
 import { getBlob, putBlob } from '../storage/db';
-import { trimmedDurationMs, type Moment } from '../types';
+import { trimmedDurationMs, TRASH_TTL_MS, type Moment } from '../types';
 import {
   exportProject,
   shareVideo,
@@ -33,7 +33,15 @@ const REENCODE_TEXT: Record<string, string> = {
   imported: 'Re-encoding imported media…',
 };
 
-function MomentThumb({ moment, shared }: { moment: Moment; shared: boolean }) {
+function MomentThumb({
+  moment,
+  shared,
+  fill,
+}: {
+  moment: Moment;
+  shared: boolean;
+  fill?: boolean;
+}) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,17 +63,104 @@ function MomentThumb({ moment, shared }: { moment: Moment; shared: boolean }) {
     };
   }, [moment.blobKey, moment.projectId, shared]);
 
-  if (!url) return <div className="thumb lg" />;
+  const cls = fill ? '' : 'thumb lg';
+  if (!url) return <div className={fill ? 'tile-ph' : 'thumb lg'} />;
   return moment.kind === 'still' ? (
-    <img className="thumb lg" src={url} alt="" />
+    <img className={cls} src={url} alt="" />
   ) : (
-    <video className="thumb lg" src={url} muted playsInline preload="metadata" />
+    <video className={cls} src={url} muted playsInline preload="metadata" />
   );
+}
+
+/**
+ * Long-press to pick a tile up, tap to open it — the way rearranging works on
+ * the iOS home screen. A grip handle on a thumbnail would cover the image it
+ * is meant to show.
+ *
+ * A plain factory rather than a hook, because these are built inside a map and
+ * a hook cannot be called in a loop. One shared bit of state is enough: only
+ * one drag can be in progress at a time.
+ */
+interface PressState {
+  timer: number | null;
+  started: boolean;
+}
+
+function longPressHandlers(
+  id: string,
+  reorder: ReturnType<typeof useReorder>,
+  onTap: () => void,
+  press: PressState,
+  enabled: boolean,
+) {
+  if (!enabled) return { onClick: onTap };
+
+  return {
+    onPointerDown: (e: React.PointerEvent) => {
+      press.started = false;
+      const el = e.currentTarget as HTMLElement;
+      const { pointerId, clientX, clientY } = e;
+      press.timer = window.setTimeout(() => {
+        press.started = true;
+        reorder.begin(id, el, pointerId, clientX, clientY);
+      }, 280);
+    },
+    onPointerMove: () => {
+      // An early slide is a scroll, not a drag.
+      if (!press.started && press.timer) {
+        window.clearTimeout(press.timer);
+        press.timer = null;
+      }
+    },
+    onPointerUp: () => {
+      if (press.timer) window.clearTimeout(press.timer);
+      // The drag ends itself via the window listeners; a plain press opens it.
+      if (!press.started) onTap();
+      press.started = false;
+    },
+    onPointerCancel: () => {
+      if (press.timer) window.clearTimeout(press.timer);
+      press.started = false;
+    },
+  };
+}
+
+function daysLeft(deletedAt: number): string {
+  const left = Math.ceil((deletedAt + TRASH_TTL_MS - Date.now()) / 86_400_000);
+  if (left <= 0) return 'Removing soon';
+  return `${left} day${left === 1 ? '' : 's'} left`;
 }
 
 function describe(m: Moment): string {
   if (m.source === 'import') return m.kind === 'still' ? 'Photo' : 'Imported clip';
   return `${m.facing === 'user' ? 'Front' : 'Back'} camera`;
+}
+
+function Tile({
+  moment,
+  index,
+  shared,
+  dragging,
+  handlers,
+}: {
+  moment: Moment;
+  index: number;
+  shared: boolean;
+  dragging: boolean;
+  handlers: Record<string, unknown>;
+}) {
+  return (
+    <button
+      className={`tile${dragging ? ' lifted' : ''}`}
+      {...handlers}
+      aria-label={`Moment ${index + 1}`}
+    >
+      <MomentThumb moment={moment} shared={shared} fill />
+      <span className="badge">{index + 1}</span>
+      {moment.peakRms < 0.004 && <span className="flagdot" />}
+      <span className="len">{(trimmedDurationMs(moment) / 1000).toFixed(1)}s</span>
+    </button>
+  );
 }
 
 export default function Editor() {
@@ -75,6 +170,9 @@ export default function Editor() {
 
   const state = useApp((s) => s.state);
   const removeMoment = useApp((s) => s.removeMoment);
+  const restoreMoment = useApp((s) => s.restoreMoment);
+  const purgeMoment = useApp((s) => s.purgeMoment);
+  const emptyTrash = useApp((s) => s.emptyTrash);
   const reorderMoments = useApp((s) => s.reorderMoments);
   const trimMoment = useApp((s) => s.trimMoment);
   const setMomentProps = useApp((s) => s.setMomentProps);
@@ -97,10 +195,16 @@ export default function Editor() {
   const [importing, setImporting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [undo, setUndo] = useState<{ momentId: string } | null>(null);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [view, setView] = useState<'list' | 'grid'>(
+    () => (localStorage.getItem('glimpse.view') as 'list' | 'grid') ?? 'list',
+  );
 
   const importRef = useRef<HTMLInputElement>(null);
   const musicRef = useRef<HTMLInputElement>(null);
   const tapsRef = useRef<number[]>([]);
+  const pressRef = useRef<PressState>({ timer: null, started: false });
 
   const cloudConfigured = useCloud((s) => s.configured);
   const userId = useCloud((s) => s.userId);
@@ -137,6 +241,11 @@ export default function Editor() {
   const silentCount = moments.filter((m) => m.peakRms < 0.004).length;
   const plan = planExport(state, id);
   const editingMoment = editing ? state.moments[editing] : null;
+  // Newest first, so the thing just deleted is at the top.
+  const trashed = Object.entries(state.trash).sort(
+    (a, b) => b[1].deletedAt - a[1].deletedAt,
+  );
+  const trashCount = trashed.length;
 
   if (!project) return null;
 
@@ -221,6 +330,23 @@ export default function Editor() {
           </div>
         )}
 
+        {moments.length > 1 && (
+          <div className="viewtoggle" role="group" aria-label="View">
+            {(['list', 'grid'] as const).map((v) => (
+              <button
+                key={v}
+                aria-pressed={view === v}
+                onClick={() => {
+                  setView(v);
+                  localStorage.setItem('glimpse.view', v);
+                }}
+              >
+                {v === 'list' ? 'List' : 'Grid'}
+              </button>
+            ))}
+          </div>
+        )}
+
         {moments.length === 0 ? (
           <div className="empty">
             <svg className="empty-art" viewBox="0 0 132 96" fill="none" aria-hidden>
@@ -235,6 +361,46 @@ export default function Editor() {
             <strong>No moments yet</strong>
             Record or import something to begin.
           </div>
+        ) : view === 'grid' ? (
+          <>
+            <ul className="grid">
+              {moments.map((m, i) => (
+                <li
+                  key={m.id}
+                  data-moment-id={m.id}
+                  className={
+                    reorder.state.draggingId === m.id ? 'dragging-item' : undefined
+                  }
+                  style={
+                    reorder.state.draggingId === m.id
+                      ? {
+                          transform: `translate(${reorder.state.offsetX}px, ${reorder.state.offsetY}px)`,
+                          position: 'relative',
+                          zIndex: 3,
+                        }
+                      : undefined
+                  }
+                >
+                  <Tile
+                    moment={m}
+                    index={i}
+                    shared={shared}
+                    dragging={reorder.state.draggingId === m.id}
+                    handlers={longPressHandlers(
+                      m.id,
+                      reorder,
+                      () => !project.locked && setEditing(m.id),
+                      pressRef.current,
+                      !project.locked,
+                    )}
+                  />
+                </li>
+              ))}
+            </ul>
+            <div className="group-footer" style={{ padding: '10px 32px 0' }}>
+              Tap a moment to edit it. Press and hold to pick it up and reorder.
+            </div>
+          </>
         ) : (
           <div className="group">
             <ul className="list">
@@ -244,6 +410,7 @@ export default function Editor() {
                   <li
                     key={m.id}
                     data-moment-id={m.id}
+                    className={dragging ? 'dragging-item' : undefined}
                     style={
                       dragging
                         ? {
@@ -256,7 +423,10 @@ export default function Editor() {
                   >
                     <SwipeToDelete
                       disabled={project.locked}
-                      onDelete={() => void removeMoment(id, m.id)}
+                      onDelete={() => {
+                        void removeMoment(id, m.id);
+                        setUndo({ momentId: m.id });
+                      }}
                     >
                       <div className={`row inset-sep${dragging ? ' lifted' : ''}`}>
                         <MomentThumb moment={m} shared={shared} />
@@ -286,10 +456,16 @@ export default function Editor() {
                           <span
                             className="grip"
                             aria-label="Reorder"
-                            onPointerDown={(e) => reorder.begin(m.id, e)}
-                            onPointerMove={reorder.move}
-                            onPointerUp={reorder.end}
-                            onPointerCancel={reorder.end}
+                            onPointerDown={(e) => {
+                              e.preventDefault();
+                              reorder.begin(
+                                m.id,
+                                e.currentTarget as HTMLElement,
+                                e.pointerId,
+                                e.clientX,
+                                e.clientY,
+                              );
+                            }}
                           >
                             <Icon name="grip" size={20} />
                           </span>
@@ -379,7 +555,20 @@ export default function Editor() {
         />
       )}
 
-      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+      {undo && (
+        <Toast
+          message="Moment deleted"
+          actionLabel="Undo"
+          onAction={() => {
+            void restoreMoment(id, undo.momentId);
+            setUndo(null);
+          }}
+          onDone={() => setUndo(null)}
+          ms={6000}
+        />
+      )}
+
+      {toast && !undo && <Toast message={toast} onDone={() => setToast(null)} />}
 
       {/* ---------------------------------------------- per-moment editing */}
       {editingMoment && (
@@ -509,6 +698,7 @@ export default function Editor() {
                   className="row destructive"
                   onClick={() => {
                     void removeMoment(id, editingMoment.id);
+                    setUndo({ momentId: editingMoment.id });
                     setEditing(null);
                   }}
                 >
@@ -519,6 +709,70 @@ export default function Editor() {
               </li>
             </ul>
           </div>
+        </Sheet>
+      )}
+
+      {trashOpen && (
+        <Sheet
+          title="Recently Deleted"
+          onClose={() => setTrashOpen(false)}
+          leftAction={
+            <button className="nav-btn" onClick={() => setTrashOpen(false)}>
+              Done
+            </button>
+          }
+        >
+          {trashed.length === 0 ? (
+            <div className="empty">
+              <strong>Nothing deleted</strong>
+              Deleted moments wait here for 30 days before their files are
+              removed.
+            </div>
+          ) : (
+            <>
+              <div className="group">
+                <ul className="list">
+                  {trashed.map(([mid, t]) => (
+                    <li key={mid} className="row inset-sep">
+                      <MomentThumb moment={t.moment} shared={false} />
+                      <div className="row-main">
+                        <div className="row-title">
+                          {(trimmedDurationMs(t.moment) / 1000).toFixed(1)}s
+                        </div>
+                        <div className="row-sub">{daysLeft(t.deletedAt)}</div>
+                      </div>
+                      <button
+                        className="chip"
+                        onClick={() => void restoreMoment(id, mid)}
+                      >
+                        Restore
+                      </button>
+                      <button
+                        className="chip"
+                        style={{ color: 'var(--red)' }}
+                        onClick={() => void purgeMoment(mid)}
+                        aria-label="Delete permanently"
+                      >
+                        <Icon name="trash" size={17} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="group">
+                <button
+                  className="btn plain destructive"
+                  onClick={() => {
+                    if (confirm('Permanently delete every trashed moment?')) {
+                      void emptyTrash();
+                    }
+                  }}
+                >
+                  Delete All Permanently
+                </button>
+              </div>
+            </>
+          )}
         </Sheet>
       )}
 
@@ -664,6 +918,31 @@ export default function Editor() {
               value={project.exportPreset ?? '1080p'}
               onChange={(p) => void setExportPreset(id, p)}
             />
+          </div>
+
+          <div className="group">
+            <ul className="list">
+              <li>
+                <button
+                  className="row"
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setTrashOpen(true);
+                  }}
+                >
+                  <div className="row-main">
+                    <div className="row-title">Recently Deleted</div>
+                    <div className="row-sub">
+                      Kept for 30 days before the files are removed
+                    </div>
+                  </div>
+                  <span className="row-value">{trashCount}</span>
+                  <span className="chevron">
+                    <Icon name="chevron-right" size={17} strokeWidth={2.4} />
+                  </span>
+                </button>
+              </li>
+            </ul>
           </div>
 
           <div className="group">

@@ -23,7 +23,7 @@ import { buildGraph, targetSize } from './filtergraph';
 
 interface FFmpegLike {
   on(ev: 'log', cb: (e: { message: string }) => void): void;
-  on(ev: 'progress', cb: (e: { progress: number }) => void): void;
+  on(ev: 'progress', cb: (e: { progress: number; time: number }) => void): void;
   load(opts: { coreURL: string; wasmURL: string }): Promise<boolean>;
   writeFile(path: string, data: Uint8Array): Promise<boolean>;
   readFile(path: string): Promise<Uint8Array>;
@@ -41,6 +41,13 @@ const VENDOR = `${import.meta.env.BASE_URL}vendor/`;
 
 let ffmpeg: FFmpegLike | null = null;
 let loading: Promise<FFmpegLike> | null = null;
+
+/**
+ * ffmpeg reports progress against whichever exec is running. The handler is
+ * swapped per export rather than registered per call, because the library only
+ * supports a single listener list for the lifetime of the instance.
+ */
+let onEncodeProgress: ((ratio: number) => void) | null = null;
 
 function injectScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -69,6 +76,12 @@ export async function loadFFmpeg(
 
     const inst = new Ctor();
     if (onLog) inst.on('log', (e) => onLog(e.message));
+    inst.on('progress', (e) => {
+      // Reported as 0..1 but can overshoot slightly at the tail.
+      if (Number.isFinite(e.progress)) {
+        onEncodeProgress?.(Math.min(1, Math.max(0, e.progress)));
+      }
+    });
     await inst.load({
       coreURL: `${VENDOR}ffmpeg-core.js`,
       wasmURL: `${VENDOR}ffmpeg-core.wasm`,
@@ -157,7 +170,11 @@ export async function exportProject(
   }
 
   if (!streamCopied) {
-    onProgress?.({ stage: 'stitching', detail: 're-encoding' });
+    onProgress?.({ stage: 'stitching', detail: 're-encoding', ratio: 0 });
+    // Real progress, not a static bar. A long re-encode on a phone takes
+    // minutes, and a frozen bar is indistinguishable from a hang.
+    onEncodeProgress = (ratio) =>
+      onProgress?.({ stage: 'stitching', detail: 're-encoding', ratio });
 
     // Music becomes the last ffmpeg input, so the graph can reference it.
     let musicInputIndex: number | undefined;
@@ -201,6 +218,7 @@ export async function exportProject(
     ]);
   }
 
+  onEncodeProgress = null;
   onProgress?.({ stage: 'reading' });
   const data = await ff.readFile(out);
   const blob = new Blob([data.slice().buffer as ArrayBuffer], { type: 'video/mp4' });

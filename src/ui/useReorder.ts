@@ -1,24 +1,35 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * Drag-to-reorder built on pointer events.
  *
- * The previous implementation used the HTML5 drag-and-drop API, which does not
- * fire at all for touch input on iOS — reordering worked in a desktop browser
- * and was silently dead on the device the app is actually for. Pointer events
- * cover mouse and touch with one code path.
+ * Three earlier versions were wrong in instructive ways:
  *
- * Drag bookkeeping lives in refs rather than state, because reordering is a
- * side effect and React state updaters must stay pure — doing it inside an
- * updater lets React double-invoke or drop the reorder entirely.
+ *  1. HTML5 drag-and-drop, which never fires for touch on iOS. It worked in a
+ *     desktop browser and was silently dead on the target device.
+ *  2. The reorder call lived inside a React state updater, which must be pure.
+ *     React can double-invoke or discard it, and it did nothing.
+ *  3. Move and end were handled on the dragged element itself. Hit-testing
+ *     needs that element to be transparent to `elementFromPoint`, so it gets
+ *     `pointer-events: none` — which also stopped it receiving the pointerup
+ *     that ends the drag, leaving the item stuck mid-air over its neighbours.
  *
- * The list is reordered live as the drag passes each neighbour, so the row
- * under the finger is always in its would-be final position.
+ * So the drag is tracked on `window` for its duration. Nothing depends on the
+ * dragged element staying interactive, and the gesture survives the pointer
+ * leaving the element, the list, or the viewport.
+ *
+ * Position comes from hit-testing what is under the pointer rather than from
+ * distance maths, which works for a list and a grid alike and copes with rows
+ * of differing heights.
  */
 export interface ReorderVisual {
   draggingId: string | null;
+  offsetX: number;
   offsetY: number;
 }
+
+const EDGE = 72;
+const MAX_SCROLL_STEP = 14;
 
 export function useReorder(
   order: string[],
@@ -27,60 +38,115 @@ export function useReorder(
 ) {
   const [visual, setVisual] = useState<ReorderVisual>({
     draggingId: null,
+    offsetX: 0,
     offsetY: 0,
   });
 
   const dragging = useRef<string | null>(null);
-  const startY = useRef(0);
-  const rowH = useRef(64);
+  const start = useRef({ x: 0, y: 0 });
+  const pointer = useRef({ x: 0, y: 0 });
   const orderRef = useRef(order);
+  const scroller = useRef<HTMLElement | null>(null);
+  const raf = useRef(0);
   orderRef.current = order;
 
-  const begin = useCallback((id: string, e: React.PointerEvent) => {
-    const el = e.currentTarget as HTMLElement;
-    rowH.current = el.closest('li')?.getBoundingClientRect().height || 64;
-    dragging.current = id;
-    startY.current = e.clientY;
-    setVisual({ draggingId: id, offsetY: 0 });
-    el.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  }, []);
+  /** Move the dragged id to whatever it is currently hovering over. */
+  const hitTest = useCallback(() => {
+    const id = dragging.current;
+    if (!id) return;
 
-  const move = useCallback(
-    (e: React.PointerEvent) => {
-      const id = dragging.current;
-      if (!id) return;
+    const el = document
+      .elementFromPoint(pointer.current.x, pointer.current.y)
+      ?.closest('[data-moment-id]') as HTMLElement | null;
+    const overId = el?.dataset.momentId;
+    if (!overId || overId === id) return;
 
-      const dy = e.clientY - startY.current;
-      const current = orderRef.current;
-      const index = current.indexOf(id);
-      if (index === -1) return;
+    const current = orderRef.current;
+    const from = current.indexOf(id);
+    const to = current.indexOf(overId);
+    if (from === -1 || to === -1) return;
 
-      const step = rowH.current || 64;
-      const steps = Math.round(dy / step);
-      const target = Math.max(0, Math.min(current.length - 1, index + steps));
+    const next = [...current];
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    orderRef.current = next;
+    onReorder(next);
+  }, [onReorder]);
 
-      if (target !== index) {
-        const next = [...current];
-        const [item] = next.splice(index, 1);
-        next.splice(target, 0, item);
-        orderRef.current = next;
-        onReorder(next);
-        // Re-anchor so the row keeps tracking the finger after the swap.
-        startY.current += (target - index) * step;
-        setVisual({ draggingId: id, offsetY: e.clientY - startY.current });
-      } else {
-        setVisual({ draggingId: id, offsetY: dy });
-      }
+  /**
+   * Scroll when the pointer nears an edge. Without it, moving a moment from
+   * position 50 to position 3 means dragging into a wall.
+   */
+  const tick = useCallback(() => {
+    const box = scroller.current;
+    if (!box || !dragging.current) return;
+
+    const r = box.getBoundingClientRect();
+    const y = pointer.current.y;
+    let delta = 0;
+    if (y < r.top + EDGE) {
+      delta = -Math.ceil(((r.top + EDGE - y) / EDGE) * MAX_SCROLL_STEP);
+    } else if (y > r.bottom - EDGE) {
+      delta = Math.ceil(((y - (r.bottom - EDGE)) / EDGE) * MAX_SCROLL_STEP);
+    }
+
+    if (delta) {
+      box.scrollTop += delta;
+      hitTest();
+    }
+    raf.current = requestAnimationFrame(tick);
+  }, [hitTest]);
+
+  const finish = useRef(() => {});
+
+  const begin = useCallback(
+    (id: string, el: HTMLElement, _pointerId: number, x: number, y: number) => {
+      scroller.current = el.closest('.scroll') as HTMLElement | null;
+      dragging.current = id;
+      start.current = { x, y };
+      pointer.current = { x, y };
+      setVisual({ draggingId: id, offsetX: 0, offsetY: 0 });
+
+      const onMove = (e: PointerEvent) => {
+        if (!dragging.current) return;
+        e.preventDefault();
+        pointer.current = { x: e.clientX, y: e.clientY };
+        setVisual({
+          draggingId: dragging.current,
+          offsetX: e.clientX - start.current.x,
+          offsetY: e.clientY - start.current.y,
+        });
+        hitTest();
+      };
+
+      const onUp = () => {
+        finish.current();
+      };
+
+      finish.current = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        if (raf.current) cancelAnimationFrame(raf.current);
+        raf.current = 0;
+        if (dragging.current) onCommit(orderRef.current);
+        dragging.current = null;
+        finish.current = () => {};
+        setVisual({ draggingId: null, offsetX: 0, offsetY: 0 });
+      };
+
+      // passive: false so preventDefault can stop the page scrolling under a
+      // finger that is dragging a moment.
+      window.addEventListener('pointermove', onMove, { passive: false });
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+      raf.current = requestAnimationFrame(tick);
     },
-    [onReorder],
+    [hitTest, onCommit, tick],
   );
 
-  const end = useCallback(() => {
-    if (dragging.current) onCommit(orderRef.current);
-    dragging.current = null;
-    setVisual({ draggingId: null, offsetY: 0 });
-  }, [onCommit]);
+  // A drag interrupted by unmounting must not leave listeners behind.
+  useEffect(() => () => finish.current(), []);
 
-  return { state: visual, begin, move, end };
+  return { state: visual, begin };
 }

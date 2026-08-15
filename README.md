@@ -124,11 +124,23 @@ events, not mouse or HTML5 drag:
 
 - **Swipe a row left to delete**, the gesture the original advertised as
   "remove moments with the flick of a finger".
-- **Drag ≡ to reorder.** The first implementation used HTML5 drag-and-drop,
-  which never fires for touch on iOS — it worked in a desktop browser and was
-  silently dead on the target device. The e2e run now asserts reordering by
-  comparing moment ids, since rows are labelled by position and a successful
-  reorder leaves the visible text identical.
+- **Drag to reorder** — the handle in list view, or press and hold a tile in
+  grid view. Three earlier attempts failed instructively: HTML5 drag-and-drop
+  never fires for touch on iOS; putting the reorder inside a React state
+  updater let React discard it; and handling pointerup on the dragged element
+  broke once that element needed `pointer-events: none` for hit-testing. The
+  drag is now tracked on `window`, hit-tests what is under the pointer so it
+  works in a list or a grid, and auto-scrolls near the edges. The e2e asserts
+  reordering by comparing moment ids, since rows are labelled by position and a
+  successful reorder leaves the visible text identical.
+
+**Grid view** for Glimpses past a couple of moments, because a vertical row per
+moment does not scale to the sixty a long-running Glimpse accumulates.
+
+**Deletion is reversible.** Removing a moment moves it to a trash that holds it
+for 30 days, with Undo offered immediately. Deleting a whole Glimpse trashes its
+moments too. Nothing deletes a video file except the expiry sweep on launch, or
+an explicit purge.
 
 ## Architecture
 

@@ -118,6 +118,26 @@ await page.waitForFunction(
 );
 step(7, `after delete: ${await page.locator('.scroll .list .row').count()} rows`);
 
+// ---- undo brings the moment back ----
+// Deleting used to erase the file immediately, so a mis-swipe was permanent.
+await page.locator('.toast-action', { hasText: 'Undo' }).click();
+await page.waitForFunction(
+  (n) => document.querySelectorAll('.scroll .list .row').length === n,
+  rowsBeforeDelete,
+  { timeout: 10000 },
+);
+step('7.5', `undo restored it: ${await page.locator('.scroll .list .row').count()} rows`);
+
+// Delete it again so later steps see the same state as before.
+await page.locator('.scroll .list .row .row-main').first().click();
+await page.waitForSelector('.sheet', { timeout: 10000 });
+await page.locator('.sheet .row.destructive').click();
+await page.waitForFunction(
+  (n) => document.querySelectorAll('.scroll .list .row').length === n - 1,
+  rowsBeforeDelete,
+  { timeout: 10000 },
+);
+
 // ---- persistence across a full reload ----
 await page.goto(`${BASE}#/`, { waitUntil: 'networkidle' });
 await page.reload({ waitUntil: 'networkidle' });
@@ -147,6 +167,27 @@ await page.waitForFunction(
 step(8.5, `preview reached end — ${totalLabel.replace(/\n/g, ' | ')}`);
 await page.locator('.preview .btn').click();
 await page.waitForSelector('.preview', { state: 'detached', timeout: 10000 });
+
+// ---- grid view and long-press reorder ----
+await page.locator('.viewtoggle button', { hasText: 'Grid' }).click();
+await page.waitForSelector('.grid .tile', { timeout: 10000 });
+const tiles = await page.locator('.grid .tile').count();
+const gridBefore = await ids();
+const t0 = await page.locator('.grid li').first().boundingBox();
+const t1 = await page.locator('.grid li').nth(1).boundingBox();
+await page.mouse.move(t0.x + t0.width / 2, t0.y + t0.height / 2);
+await page.mouse.down();
+await page.waitForTimeout(420); // exceed the long-press threshold
+await page.mouse.move(t1.x + t1.width / 2, t1.y + t1.height / 2, { steps: 12 });
+await page.mouse.up();
+await page.waitForTimeout(400);
+const gridAfter = await ids();
+step('8.7', `grid: ${tiles} tiles, order ${gridBefore.join() === gridAfter.join() ? 'UNCHANGED' : 'changed'}`);
+if (gridBefore.join() === gridAfter.join()) {
+  errors.push('long-press reorder in grid did nothing');
+}
+await page.locator('.viewtoggle button', { hasText: 'List' }).click();
+await page.waitForSelector('.scroll .list .row', { timeout: 10000 });
 
 await page.evaluate(() => {
   navigator.canShare = () => false;
