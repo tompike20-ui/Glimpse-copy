@@ -5,6 +5,7 @@ import { apply, type JournalEntry } from '../storage/journal';
 import {
   appendEntry,
   assemblePending,
+  backfillEntryIds,
   clearPending,
   deleteBlob,
   findOrphanBlobs,
@@ -38,6 +39,7 @@ interface Store {
   removeMoment: (projectId: string, momentId: string) => Promise<void>;
   reorderMoments: (projectId: string, momentIds: string[]) => Promise<void>;
   trimMoment: (
+    projectId: string,
     momentId: string,
     trimStartMs: number,
     trimEndMs: number | null,
@@ -58,6 +60,7 @@ export const useApp = create<Store>((set, get) => {
     recovered: [],
 
     async init() {
+      await backfillEntryIds();
       const state = await loadState();
       set({ state, ready: true });
 
@@ -138,9 +141,10 @@ export const useApp = create<Store>((set, get) => {
       await commit({ t: 'moment.reorder', projectId, momentIds, ts: Date.now() });
     },
 
-    async trimMoment(momentId, trimStartMs, trimEndMs) {
+    async trimMoment(projectId, momentId, trimStartMs, trimEndMs) {
       await commit({
         t: 'moment.trim',
+        projectId,
         momentId,
         trimStartMs,
         trimEndMs,

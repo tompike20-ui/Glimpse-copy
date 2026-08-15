@@ -8,11 +8,14 @@ import {
   shareVideo,
   type ExportProgress,
 } from '../export/exporter';
+import { useCloud } from '../cloud/useCloud';
+import { createInvite, ensureBlob, subscribeToProject } from '../cloud/sync';
 
 function MomentRow({
   moment,
   index,
   locked,
+  shared,
   onRemove,
   onTrim,
   onDragStart,
@@ -23,6 +26,7 @@ function MomentRow({
   moment: Moment;
   index: number;
   locked: boolean;
+  shared: boolean;
   onRemove: () => void;
   onTrim: (start: number, end: number | null) => void;
   onDragStart: () => void;
@@ -36,7 +40,12 @@ function MomentRow({
   useEffect(() => {
     let revoked: string | null = null;
     let cancelled = false;
-    void getBlob(moment.blobKey).then((b) => {
+    // On a shared project the file may belong to a collaborator and not exist
+    // locally yet, so fall through to the bucket.
+    const load = shared
+      ? ensureBlob(moment.projectId, moment.blobKey)
+      : getBlob(moment.blobKey);
+    void load.then((b) => {
       if (!b || cancelled) return;
       revoked = URL.createObjectURL(b);
       setUrl(revoked);
@@ -45,7 +54,7 @@ function MomentRow({
       cancelled = true;
       if (revoked) URL.revokeObjectURL(revoked);
     };
-  }, [moment.blobKey]);
+  }, [moment.blobKey, moment.projectId, shared]);
 
   const silent = moment.peakRms < 0.004;
   const end = moment.trimEndMs ?? moment.durationMs;
@@ -144,6 +153,26 @@ export default function Editor() {
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState('');
   const orderRef = useRef<string[]>([]);
+
+  const cloudConfigured = useCloud((s) => s.configured);
+  const userId = useCloud((s) => s.userId);
+  const cloudBusy = useCloud((s) => s.busy);
+  const cloudError = useCloud((s) => s.error);
+  const shareProject = useCloud((s) => s.share);
+  const syncNow = useCloud((s) => s.sync);
+  const reload = useApp((s) => s.init);
+
+  const [shared, setShared] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+
+  // Live collaboration: a collaborator appending a moment lands as an entry
+  // insert, which we pull and replay.
+  useEffect(() => {
+    if (!shared || !userId) return;
+    return subscribeToProject(id, () => {
+      void syncNow(id).then(() => reload());
+    });
+  }, [shared, userId, id, syncNow, reload]);
 
   useEffect(() => {
     if (project) {
@@ -247,6 +276,7 @@ export default function Editor() {
                 moment={m}
                 index={i}
                 locked={project.locked}
+                shared={shared}
                 dragging={dragIndex === i}
                 onDragStart={() => setDragIndex(i)}
                 onDragEnter={() => {
@@ -257,7 +287,7 @@ export default function Editor() {
                   void reorderMoments(id, orderRef.current);
                 }}
                 onRemove={() => void removeMoment(id, m.id)}
-                onTrim={(start, end) => void trimMoment(m.id, start, end)}
+                onTrim={(start, end) => void trimMoment(id, m.id, start, end)}
               />
             ))}
           </ul>
@@ -309,6 +339,61 @@ export default function Editor() {
             >
               {project.locked ? 'Unlock this Glimpse' : 'Lock this Glimpse'}
             </button>
+
+            {cloudConfigured && (
+              <>
+                <hr
+                  style={{
+                    border: 0,
+                    borderTop: '1px solid var(--line)',
+                    margin: '14px 0',
+                  }}
+                />
+                {cloudError && <div className="banner bad">{cloudError}</div>}
+
+                {!userId ? (
+                  <div className="dim" style={{ padding: '0 0 8px' }}>
+                    Sign in from an invite link to collaborate. Everything here
+                    works without an account.
+                  </div>
+                ) : inviteLink ? (
+                  <>
+                    <input
+                      className="field"
+                      readOnly
+                      value={inviteLink}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(inviteLink);
+                      }}
+                    >
+                      Copy invite link
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="secondary"
+                    disabled={cloudBusy}
+                    onClick={() => {
+                      void (async () => {
+                        await shareProject(id, project.name, project.aspect);
+                        setShared(true);
+                        setInviteLink(await createInvite(id));
+                      })();
+                    }}
+                  >
+                    {cloudBusy
+                      ? 'Sharing…'
+                      : shared
+                        ? 'Create another invite link'
+                        : 'Share this Glimpse'}
+                  </button>
+                )}
+              </>
+            )}
             <button
               className="secondary"
               style={{ color: 'var(--accent)' }}

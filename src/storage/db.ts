@@ -38,6 +38,12 @@ export function db(): Promise<IDBPDatabase<GlimpseDB>> {
 
 export async function appendEntry(e: JournalEntry): Promise<void> {
   const d = await db();
+  await d.add('journal', { ...e, eid: e.eid ?? crypto.randomUUID() });
+}
+
+/** Append an entry that came from a collaborator, preserving its id. */
+export async function appendRemoteEntry(e: JournalEntry): Promise<void> {
+  const d = await db();
   await d.add('journal', e);
 }
 
@@ -45,6 +51,47 @@ export async function loadState(): Promise<AppState> {
   const d = await db();
   const entries = await d.getAll('journal');
   return replay(entries);
+}
+
+export async function loadEntriesWithKeys(): Promise<
+  { key: number; entry: JournalEntry }[]
+> {
+  const d = await db();
+  const tx = d.transaction('journal');
+  const out: { key: number; entry: JournalEntry }[] = [];
+  for await (const cursor of tx.store) {
+    out.push({ key: cursor.key as number, entry: cursor.value });
+  }
+  await tx.done;
+  return out;
+}
+
+/**
+ * Entries written before sync existed have no id, so they could never be
+ * pushed. Assigning one on first run makes existing local work syncable.
+ */
+export async function backfillEntryIds(): Promise<number> {
+  const d = await db();
+  const tx = d.transaction('journal', 'readwrite');
+  let n = 0;
+  for await (const cursor of tx.store) {
+    if (!cursor.value.eid) {
+      await cursor.update({ ...cursor.value, eid: crypto.randomUUID() });
+      n++;
+    }
+  }
+  await tx.done;
+  return n;
+}
+
+export async function readMeta(key: string): Promise<unknown> {
+  const d = await db();
+  return d.get('meta', key);
+}
+
+export async function writeMeta(key: string, value: unknown): Promise<void> {
+  const d = await db();
+  await d.put('meta', value, key);
 }
 
 export async function putBlob(key: string, blob: Blob): Promise<void> {

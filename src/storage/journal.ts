@@ -6,21 +6,33 @@ import { emptyState } from '../types';
  * record in place, so a crash mid-write can lose at most the entry being
  * appended — never corrupt an existing project. State is rebuilt by replay.
  */
+/**
+ * `eid` is a stable uuid that doubles as the server primary key, which is what
+ * makes syncing idempotent — pushing the same entry twice is a no-op. It is
+ * optional only so journals written before sync existed still replay.
+ */
+interface Base {
+  ts: number;
+  eid?: string;
+}
+
 export type JournalEntry =
-  | { t: 'project.create'; id: string; name: string; aspect: Aspect; ts: number }
-  | { t: 'project.rename'; id: string; name: string; ts: number }
-  | { t: 'project.lock'; id: string; locked: boolean; ts: number }
-  | { t: 'project.delete'; id: string; ts: number }
-  | { t: 'moment.add'; moment: Moment; ts: number }
-  | { t: 'moment.remove'; projectId: string; momentId: string; ts: number }
-  | { t: 'moment.reorder'; projectId: string; momentIds: string[]; ts: number }
-  | {
+  | ({ t: 'project.create'; id: string; name: string; aspect: Aspect } & Base)
+  | ({ t: 'project.rename'; id: string; name: string } & Base)
+  | ({ t: 'project.lock'; id: string; locked: boolean } & Base)
+  | ({ t: 'project.delete'; id: string } & Base)
+  | ({ t: 'moment.add'; moment: Moment } & Base)
+  | ({ t: 'moment.remove'; projectId: string; momentId: string } & Base)
+  | ({ t: 'moment.reorder'; projectId: string; momentIds: string[] } & Base)
+  | ({
       t: 'moment.trim';
+      // Carried explicitly so sync can route the entry without consulting
+      // local state, which a collaborator may not have yet.
+      projectId: string;
       momentId: string;
       trimStartMs: number;
       trimEndMs: number | null;
-      ts: number;
-    };
+    } & Base);
 
 /** Applies one entry. Unknown or inapplicable entries are ignored, not fatal. */
 export function apply(state: AppState, e: JournalEntry): AppState {
