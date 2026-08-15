@@ -104,9 +104,17 @@ a grabber. Browsing and editing follow the system appearance in both light and
 dark; capture is always dark, the way Camera is.
 
 The brand is a warm amber, kept clear of the red that record and destructive
-actions own. Interactive text stays iOS blue, which is familiar and contrast-safe
-on either background — the amber appears on the app mark, onboarding, the
-capture ring and the active mode.
+actions own, and it now runs through the whole app rather than appearing only
+on the welcome screen: gradient primary buttons, the app mark reused in every
+empty state, amber interactive text, sentence-case bold section headings, and
+softer 14pt card corners.
+
+Amber needs two values, not one. On white it measures about 2.9:1, well under
+the 4.5:1 minimum for text, so `--brand` covers fills and icons while
+`--brand-ink` — a burnt orange at 5.2:1 on white and 4.6:1 on the grouped
+background — covers anything that has to be read. A darker yellow also passes
+but reads muddy brown. The system blue token was removed entirely once nothing
+referenced it, so it cannot drift back in.
 
 Every icon is a vector on a 24×24 grid (`src/ui/Icon.tsx`). Text glyphs and
 emoji were the clearest tell that this was a web page: they render differently

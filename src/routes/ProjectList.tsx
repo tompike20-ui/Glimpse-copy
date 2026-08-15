@@ -63,7 +63,7 @@ function Cover({ project }: { project: Project }) {
 
   if (!url)
     return (
-      <div className="thumb">
+      <div className="thumb brand-mark">
         <Icon name={project.locked ? 'lock' : 'film'} size={22} />
       </div>
     );
@@ -131,17 +131,10 @@ export default function ProjectList() {
 
         {projects.length === 0 ? (
           <div className="empty">
-            <svg className="empty-art" viewBox="0 0 132 96" fill="none" aria-hidden>
-              <rect x="6" y="18" width="34" height="60" rx="5"
-                stroke="currentColor" strokeWidth="2" opacity=".45" />
-              <rect x="47" y="8" width="38" height="80" rx="6"
-                stroke="currentColor" strokeWidth="2" />
-              <rect x="92" y="18" width="34" height="60" rx="5"
-                stroke="currentColor" strokeWidth="2" opacity=".45" />
-              <circle cx="66" cy="48" r="11" stroke="currentColor" strokeWidth="2" />
-              <circle cx="66" cy="48" r="4" fill="currentColor" />
-            </svg>
-            <strong>No Glimpses yet</strong>
+            <div className="mark">
+              <Icon name="film" size={34} strokeWidth={1.6} />
+            </div>
+            <strong>Nothing here yet</strong>
             Capture a second at a time. Every moment joins the same growing
             video.
           </div>

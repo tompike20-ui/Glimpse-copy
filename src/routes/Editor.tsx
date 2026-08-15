@@ -349,17 +349,11 @@ export default function Editor() {
 
         {moments.length === 0 ? (
           <div className="empty">
-            <svg className="empty-art" viewBox="0 0 132 96" fill="none" aria-hidden>
-              <rect x="8" y="26" width="46" height="44" rx="6"
-                stroke="currentColor" strokeWidth="2" />
-              <rect x="62" y="26" width="46" height="44" rx="6"
-                stroke="currentColor" strokeWidth="2" strokeDasharray="5 5"
-                opacity=".5" />
-              <path d="M118 40v16M110 48h16" stroke="currentColor"
-                strokeWidth="2" strokeLinecap="round" opacity=".5" />
-            </svg>
+            <div className="mark">
+              <Icon name="camera" size={34} strokeWidth={1.6} />
+            </div>
             <strong>No moments yet</strong>
-            Record or import something to begin.
+            Record something, or bring in a video or photo you already have.
           </div>
         ) : view === 'grid' ? (
           <>
@@ -724,6 +718,9 @@ export default function Editor() {
         >
           {trashed.length === 0 ? (
             <div className="empty">
+              <div className="mark">
+                <Icon name="trash" size={32} strokeWidth={1.6} />
+              </div>
               <strong>Nothing deleted</strong>
               Deleted moments wait here for 30 days before their files are
               removed.
