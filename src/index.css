@@ -1351,3 +1351,12 @@ svg {
   height: 100%;
   background: var(--fill);
 }
+
+/* Quiet, but findable: the answer to "am I on the new version?" */
+.buildstamp {
+  text-align: center;
+  font-size: 11px;
+  color: var(--label-3);
+  padding: 26px 16px 8px;
+  font-variant-numeric: tabular-nums;
+}

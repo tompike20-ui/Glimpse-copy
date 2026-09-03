@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -5,8 +6,27 @@ import { VitePWA } from 'vite-plugin-pwa';
 // Served from https://<user>.github.io/Glimpse-copy/
 const BASE = '/Glimpse-copy/';
 
+/**
+ * A visible build stamp, so "am I actually running the new version?" is a
+ * question the app can answer rather than one that needs a maintainer.
+ * Service workers on iOS can serve a stale build across a reopen, and without
+ * this there is no way to tell that from a change that was never deployed.
+ */
+function buildId(): string {
+  try {
+    const sha = execSync('git rev-parse --short HEAD').toString().trim();
+    return sha;
+  } catch {
+    return 'dev';
+  }
+}
+
 export default defineConfig({
   base: BASE,
+  define: {
+    __BUILD_ID__: JSON.stringify(buildId()),
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' ')),
+  },
   plugins: [
     react(),
     VitePWA({

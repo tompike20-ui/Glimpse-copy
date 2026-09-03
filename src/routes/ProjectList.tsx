@@ -189,6 +189,10 @@ export default function ProjectList() {
             </div>
           </div>
         )}
+
+        <div className="buildstamp">
+          Version {__BUILD_ID__} · {__BUILD_TIME__}
+        </div>
       </div>
 
       <div className="toolbar">
