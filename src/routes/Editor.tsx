@@ -24,6 +24,7 @@ import { useReorder } from '../ui/useReorder';
 import { Icon } from '../ui/Icon';
 import { Toast } from '../ui/Toast';
 import { Preview } from '../ui/Preview';
+import { OrganiseSheet } from '../ui/OrganiseSheet';
 
 const REENCODE_TEXT: Record<string, string> = {
   trimmed: 'Re-encoding trimmed moments…',
@@ -196,6 +197,9 @@ export default function Editor() {
   const [toast, setToast] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [undo, setUndo] = useState<{ momentId: string } | null>(null);
+  const [organising, setOrganising] = useState(false);
+  // The order Organise replaced, kept only long enough to offer it back.
+  const [orderUndo, setOrderUndo] = useState<string[] | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
   const [view, setView] = useState<'list' | 'grid'>(
     () => (localStorage.getItem('glimpse.view') as 'list' | 'grid') ?? 'list',
@@ -331,19 +335,31 @@ export default function Editor() {
         )}
 
         {moments.length > 1 && (
-          <div className="viewtoggle" role="group" aria-label="View">
-            {(['list', 'grid'] as const).map((v) => (
+          <div className="listbar">
+            <div className="viewtoggle" role="group" aria-label="View">
+              {(['list', 'grid'] as const).map((v) => (
+                <button
+                  key={v}
+                  aria-pressed={view === v}
+                  onClick={() => {
+                    setView(v);
+                    localStorage.setItem('glimpse.view', v);
+                  }}
+                >
+                  {v === 'list' ? 'List' : 'Grid'}
+                </button>
+              ))}
+            </div>
+            {!project.locked && (
               <button
-                key={v}
-                aria-pressed={view === v}
-                onClick={() => {
-                  setView(v);
-                  localStorage.setItem('glimpse.view', v);
-                }}
+                className="linkbtn"
+                onClick={() => setOrganising(true)}
+                aria-label="Organise moments"
               >
-                {v === 'list' ? 'List' : 'Grid'}
+                <Icon name="shuffle" size={17} />
+                Organise
               </button>
-            ))}
+            )}
           </div>
         )}
 
@@ -549,6 +565,34 @@ export default function Editor() {
         />
       )}
 
+      {organising && (
+        <OrganiseSheet
+          order={order}
+          moments={state.moments}
+          onCancel={() => setOrganising(false)}
+          onApply={(next) => {
+            setOrderUndo(order);
+            setOrder(next);
+            void reorderMoments(id, next);
+            setOrganising(false);
+          }}
+        />
+      )}
+
+      {orderUndo && (
+        <Toast
+          message="Order changed"
+          actionLabel="Undo"
+          onAction={() => {
+            setOrder(orderUndo);
+            void reorderMoments(id, orderUndo);
+            setOrderUndo(null);
+          }}
+          onDone={() => setOrderUndo(null)}
+          ms={6000}
+        />
+      )}
+
       {undo && (
         <Toast
           message="Moment deleted"
@@ -562,7 +606,11 @@ export default function Editor() {
         />
       )}
 
-      {toast && !undo && <Toast message={toast} onDone={() => setToast(null)} />}
+      {/* An undo offer outranks a plain confirmation: only one can be on
+          screen, and the one carrying a way back is the one worth showing. */}
+      {toast && !undo && !orderUndo && (
+        <Toast message={toast} onDone={() => setToast(null)} />
+      )}
 
       {/* ---------------------------------------------- per-moment editing */}
       {editingMoment && (

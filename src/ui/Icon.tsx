@@ -28,7 +28,10 @@ export type IconName =
   | 'mic-off'
   | 'sparkle'
   | 'play'
-  | 'sliders';
+  | 'sliders'
+  | 'shuffle'
+  | 'sort-down'
+  | 'sort-up';
 
 const PATHS: Record<IconName, JSX.Element> = {
   'chevron-left': <path d="M15 4.5 7.5 12l7.5 7.5" />,
@@ -124,6 +127,28 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M4 8h10M18 8h2M4 16h4M12 16h8" />
       <circle cx="16" cy="8" r="2.2" />
       <circle cx="10" cy="16" r="2.2" />
+    </>
+  ),
+  shuffle: (
+    <>
+      <path d="M4 7h7l4 10h5" />
+      <path d="M4 17h7" />
+      <path d="m17 4 3 3-3 3M17 14l3 3-3 3" />
+    </>
+  ),
+  // An arrow and a list that grows downward: small values at the top.
+  'sort-down': (
+    <>
+      <path d="M7 4v16" />
+      <path d="m3.5 16.5 3.5 3.5 3.5-3.5" />
+      <path d="M14 6h7M14 11h5M14 16h3" />
+    </>
+  ),
+  'sort-up': (
+    <>
+      <path d="M7 20V4" />
+      <path d="m3.5 7.5 3.5-3.5 3.5 3.5" />
+      <path d="M14 6h3M14 11h5M14 16h7" />
     </>
   ),
 };

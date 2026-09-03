@@ -308,9 +308,17 @@ button {
   margin-top: 2px;
 }
 
+/* A column, not a bare block, so the title and subtitle stack even when the
+   row is built from inline elements rather than divs. */
 .row-main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  /* Stretch, not flex-start: the title needs the full column width for its
+     ellipsis to have something to truncate against. */
+  align-items: stretch;
+  text-align: left;
 }
 
 .row-value {
@@ -1312,14 +1320,35 @@ svg {
   z-index: 3;
 }
 
+.listbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 var(--gutter) 10px;
+}
+
 .viewtoggle {
   display: flex;
   gap: 2px;
   background: var(--fill);
   border-radius: 8px;
   padding: 2px;
-  margin: 0 var(--gutter) 10px;
   width: fit-content;
+}
+
+/* A text action, so it reads as secondary to the segmented control it sits
+   beside rather than competing with it. */
+.linkbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--brand-ink);
+  font-size: 15px;
+  font-weight: 500;
+  /* Tappable to 44pt without the label looking padded. */
+  padding: 12px 2px;
+  margin: -12px 0;
 }
 
 .viewtoggle button {
@@ -1350,6 +1379,71 @@ svg {
   width: 100%;
   height: 100%;
   background: var(--fill);
+}
+
+/* ------------------------------------------------------------- organise */
+
+.organise-preview {
+  padding: 0 var(--gutter) 18px;
+}
+
+.organise-strip {
+  display: flex;
+  gap: 5px;
+}
+
+.organise-tile {
+  flex: 1;
+  /* Fixed height rather than aspect-ratio: the tiles must line up as a strip
+     even when the Glimpse mixes portrait and landscape sources. */
+  height: 62px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--fill);
+}
+
+.organise-tile img,
+.organise-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.organise-caption {
+  font-size: 12px;
+  color: var(--label-2);
+  padding-top: 8px;
+}
+
+.organise-row {
+  width: 100%;
+  text-align: left;
+  background: none;
+}
+
+/* Aligned to the label, not to a thumbnail: these rows lead with a 21px icon,
+   so the list's usual 72px inset would float the separator into open space. */
+.organise-row + .organise-row::before {
+  left: 49px;
+}
+
+.organise-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--label-2);
+}
+
+.organise-icon.on {
+  color: var(--brand-ink);
+}
+
+.organise-check {
+  flex: 0 0 auto;
+  color: var(--brand-ink);
+  display: grid;
+  place-items: center;
 }
 
 /* Quiet, but findable: the answer to "am I on the new version?" */
