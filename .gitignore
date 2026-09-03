@@ -2,3 +2,7 @@ node_modules
 dist
 .DS_Store
 *.local
+
+# Seeded design canvas — a 2.5 MB build artifact regenerated from the
+# .dc.html sources beside it, not something to review in a diff.
+design/glimpse-overhaul.html
