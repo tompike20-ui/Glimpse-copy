@@ -16,6 +16,7 @@ import {
   clearPending,
   deleteBlob,
   findOrphanBlobs,
+  getBlob,
   loadState,
   pendingBlobKeys,
   putBlob,
@@ -108,6 +109,15 @@ export const useApp = create<Store>((set, get) => {
         await clearPending(key);
       }
       if (recovered.length) set({ recovered });
+
+      // Moments deleted before the trash existed had their files removed at
+      // the time. Those entries now replay into the trash, so Recently Deleted
+      // would offer to restore video that is not there. Drop them quietly.
+      for (const [momentId, t] of Object.entries(state.trash)) {
+        if (!(await getBlob(t.moment.blobKey))) {
+          await commit({ t: 'moment.purge', momentId, ts: Date.now() });
+        }
+      }
 
       // Anything past its recovery window goes now, which is the only point
       // at which this app deletes video on its own.
