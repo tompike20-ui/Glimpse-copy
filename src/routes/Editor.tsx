@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../store/useApp';
-import { getBlob, putBlob } from '../storage/db';
+import { putBlob } from '../storage/db';
 import { trimmedDurationMs, TRASH_TTL_MS, type Moment } from '../types';
 import {
   exportProject,
@@ -16,13 +16,12 @@ import {
   type FrameSource,
 } from '../export/snapshot';
 import { useCloud } from '../cloud/useCloud';
-import { createInvite, ensureBlob, subscribeToProject } from '../cloud/sync';
+import { createInvite, subscribeToProject } from '../cloud/sync';
 import {
   BackButton,
   NavBar,
   Segmented,
   Sheet,
-  SwipeToDelete,
   Switch,
   useScrolled,
 } from '../ui/components';
@@ -32,6 +31,8 @@ import { Toast } from '../ui/Toast';
 import { Preview } from '../ui/Preview';
 import { OrganiseSheet } from '../ui/OrganiseSheet';
 import { ClipPreview } from '../ui/ClipPreview';
+import { Frame } from '../ui/Frame';
+import { TrimBar } from '../ui/TrimBar';
 
 const REENCODE_TEXT: Record<string, string> = {
   trimmed: 'Re-encoding trimmed moments…',
@@ -50,33 +51,14 @@ function MomentThumb({
   shared: boolean;
   fill?: boolean;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let made: string | null = null;
-    let cancelled = false;
-    // On a shared project the file may belong to a collaborator and not exist
-    // locally yet, so fall through to the bucket.
-    const load = shared
-      ? ensureBlob(moment.projectId, moment.blobKey)
-      : getBlob(moment.blobKey);
-    void load.then((b) => {
-      if (!b || cancelled) return;
-      made = URL.createObjectURL(b);
-      setUrl(made);
-    });
-    return () => {
-      cancelled = true;
-      if (made) URL.revokeObjectURL(made);
-    };
-  }, [moment.blobKey, moment.projectId, shared]);
-
   const cls = fill ? '' : 'thumb lg';
-  if (!url) return <div className={fill ? 'tile-ph' : 'thumb lg'} />;
-  return moment.kind === 'still' ? (
-    <img className={cls} src={url} alt="" />
-  ) : (
-    <video className={cls} src={url} muted playsInline preload="metadata" />
+  return (
+    <Frame
+      moment={moment}
+      shared={shared}
+      className={cls}
+      placeholder={<div className={fill ? 'tile-ph' : 'thumb lg'} />}
+    />
   );
 }
 
@@ -144,33 +126,6 @@ function describe(m: Moment): string {
   return `${m.facing === 'user' ? 'Front' : 'Back'} camera`;
 }
 
-function Tile({
-  moment,
-  index,
-  shared,
-  dragging,
-  handlers,
-}: {
-  moment: Moment;
-  index: number;
-  shared: boolean;
-  dragging: boolean;
-  handlers: Record<string, unknown>;
-}) {
-  return (
-    <button
-      className={`tile${dragging ? ' lifted' : ''}`}
-      {...handlers}
-      aria-label={`Moment ${index + 1}`}
-    >
-      <MomentThumb moment={moment} shared={shared} fill />
-      <span className="badge">{index + 1}</span>
-      {moment.peakRms < 0.004 && <span className="flagdot" />}
-      <span className="len">{(trimmedDurationMs(moment) / 1000).toFixed(1)}s</span>
-    </button>
-  );
-}
-
 export default function Editor() {
   const { id = '' } = useParams();
   const nav = useNavigate();
@@ -198,7 +153,8 @@ export default function Editor() {
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [exportErr, setExportErr] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
+  /** The moment on the stage, and the one the inline controls act on. */
+  const [selected, setSelected] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
   const [importing, setImporting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -212,9 +168,6 @@ export default function Editor() {
   // The order Organise replaced, kept only long enough to offer it back.
   const [orderUndo, setOrderUndo] = useState<string[] | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
-  const [view, setView] = useState<'list' | 'grid'>(
-    () => (localStorage.getItem('glimpse.view') as 'list' | 'grid') ?? 'list',
-  );
 
   const importRef = useRef<HTMLInputElement>(null);
   const musicRef = useRef<HTMLInputElement>(null);
@@ -236,6 +189,16 @@ export default function Editor() {
     if (project) setOrder(project.momentIds);
   }, [project?.momentIds]);
 
+  /* Keep a moment selected: the stage and the controls are the editor now, so
+     an empty selection would leave most of the screen blank. */
+  useEffect(() => {
+    if (order.length === 0) {
+      if (selected !== null) setSelected(null);
+    } else if (!selected || !order.includes(selected)) {
+      setSelected(order[0]);
+    }
+  }, [order, selected]);
+
   useEffect(() => {
     if (!shared || !userId) return;
     return subscribeToProject(id, () => {
@@ -255,7 +218,7 @@ export default function Editor() {
   const totalMs = moments.reduce((s, m) => s + trimmedDurationMs(m), 0);
   const silentCount = moments.filter((m) => m.peakRms < 0.004).length;
   const plan = planExport(state, id);
-  const editingMoment = editing ? state.moments[editing] : null;
+  const selectedMoment = selected ? state.moments[selected] : null;
   // Newest first, so the thing just deleted is at the top.
   const trashed = Object.entries(state.trash).sort(
     (a, b) => b[1].deletedAt - a[1].deletedAt,
@@ -360,35 +323,6 @@ export default function Editor() {
           </div>
         )}
 
-        {moments.length > 1 && (
-          <div className="listbar">
-            <div className="viewtoggle" role="group" aria-label="View">
-              {(['list', 'grid'] as const).map((v) => (
-                <button
-                  key={v}
-                  aria-pressed={view === v}
-                  onClick={() => {
-                    setView(v);
-                    localStorage.setItem('glimpse.view', v);
-                  }}
-                >
-                  {v === 'list' ? 'List' : 'Grid'}
-                </button>
-              ))}
-            </div>
-            {!project.locked && (
-              <button
-                className="linkbtn"
-                onClick={() => setOrganising(true)}
-                aria-label="Organise moments"
-              >
-                <Icon name="shuffle" size={17} />
-                Organise
-              </button>
-            )}
-          </div>
-        )}
-
         {moments.length === 0 ? (
           <div className="empty">
             <div className="mark">
@@ -397,49 +331,52 @@ export default function Editor() {
             <strong>No moments yet</strong>
             Record something, or bring in a video or photo you already have.
           </div>
-        ) : view === 'grid' ? (
-          <>
-            <ul className="grid">
-              {moments.map((m, i) => (
-                <li
-                  key={m.id}
-                  data-moment-id={m.id}
-                  className={
-                    reorder.state.draggingId === m.id ? 'dragging-item' : undefined
-                  }
-                  style={
-                    reorder.state.draggingId === m.id
-                      ? {
-                          transform: `translate(${reorder.state.offsetX}px, ${reorder.state.offsetY}px)`,
-                          position: 'relative',
-                          zIndex: 3,
-                        }
-                      : undefined
-                  }
-                >
-                  <Tile
-                    moment={m}
-                    index={i}
-                    shared={shared}
-                    dragging={reorder.state.draggingId === m.id}
-                    handlers={longPressHandlers(
-                      m.id,
-                      reorder,
-                      () => !project.locked && setEditing(m.id),
-                      pressRef.current,
-                      !project.locked,
-                    )}
-                  />
-                </li>
-              ))}
-            </ul>
-            <div className="group-footer" style={{ padding: '10px 32px 0' }}>
-              Tap a moment to edit it. Press and hold to pick it up and reorder.
-            </div>
-          </>
         ) : (
-          <div className="group">
-            <ul className="list">
+          <>
+            {/* The hero: the moment under the playhead, at a size worth
+                looking at. The old editor showed 52px thumbnails in grouped
+                rows — a settings screen that happened to contain video. */}
+            {selectedMoment && (
+              <div className="editor-stage">
+                <ClipPreview moment={selectedMoment} />
+                <div className="editor-stage-meta">
+                  <span className="editor-stage-index">
+                    Moment {order.indexOf(selectedMoment.id) + 1} of {moments.length}
+                  </span>
+                  <span className="editor-stage-len">
+                    {(trimmedDurationMs(selectedMoment) / 1000).toFixed(1)}s ·{' '}
+                    {selectedMoment.peakRms < 0.004 ? (
+                      <span className="flag">no sound recorded</span>
+                    ) : (
+                      describe(selectedMoment)
+                    )}
+                    {(selectedMoment.speed ?? 1) !== 1 && ` · ${selectedMoment.speed}×`}
+                    {selectedMoment.muted && ' · muted'}
+                    {selectedMoment.interrupted && (
+                      <span className="flag"> · interrupted</span>
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="listbar">
+              <div className="section-title">Timeline</div>
+              {!project.locked && moments.length > 1 && (
+                <button
+                  className="linkbtn"
+                  onClick={() => setOrganising(true)}
+                  aria-label="Organise moments"
+                >
+                  <Icon name="shuffle" size={17} />
+                  Organise
+                </button>
+              )}
+            </div>
+
+            {/* Horizontal, because that is the shape a Glimpse actually has.
+                A vertical row per moment does not survive sixty of them. */}
+            <ul className="strip">
               {moments.map((m, i) => {
                 const dragging = reorder.state.draggingId === m.id;
                 return (
@@ -450,73 +387,145 @@ export default function Editor() {
                     style={
                       dragging
                         ? {
-                            transform: `translateY(${reorder.state.offsetY}px)`,
+                            transform: `translate(${reorder.state.offsetX}px, ${reorder.state.offsetY}px)`,
                             position: 'relative',
-                            zIndex: 2,
+                            zIndex: 3,
                           }
                         : undefined
                     }
                   >
-                    <SwipeToDelete
-                      disabled={project.locked}
-                      onDelete={() => {
-                        void removeMoment(id, m.id);
-                        setUndo({ momentId: m.id });
-                      }}
+                    <button
+                      className={`strip-tile${m.id === selected ? ' on' : ''}${dragging ? ' lifted' : ''}`}
+                      aria-label={`Moment ${i + 1}`}
+                      aria-pressed={m.id === selected}
+                      {...longPressHandlers(
+                        m.id,
+                        reorder,
+                        () => setSelected(m.id),
+                        pressRef.current,
+                        !project.locked,
+                      )}
                     >
-                      <div className={`row inset-sep${dragging ? ' lifted' : ''}`}>
-                        <MomentThumb moment={m} shared={shared} />
-                        <button
-                          className="row-main"
-                          style={{ background: 'none', textAlign: 'left' }}
-                          onClick={() => !project.locked && setEditing(m.id)}
-                        >
-                          <div className="row-title">
-                            {i + 1}. {(trimmedDurationMs(m) / 1000).toFixed(1)}s
-                            {(m.speed ?? 1) !== 1 && ` · ${m.speed}×`}
-                            {m.muted && ' · muted'}
-                          </div>
-                          <div className="row-sub">
-                            {m.peakRms < 0.004 ? (
-                              <span className="flag">no sound recorded</span>
-                            ) : (
-                              describe(m)
-                            )}
-                            {m.interrupted && (
-                              <span className="flag"> · interrupted</span>
-                            )}
-                          </div>
-                        </button>
-
-                        {!project.locked && (
-                          <span
-                            className="grip"
-                            aria-label="Reorder"
-                            onPointerDown={(e) => {
-                              e.preventDefault();
-                              reorder.begin(
-                                m.id,
-                                e.currentTarget as HTMLElement,
-                                e.pointerId,
-                                e.clientX,
-                                e.clientY,
-                              );
-                            }}
-                          >
-                            <Icon name="grip" size={20} />
-                          </span>
-                        )}
-                      </div>
-                    </SwipeToDelete>
+                      <MomentThumb moment={m} shared={shared} fill />
+                      {m.peakRms < 0.004 && <span className="flagdot" />}
+                      <span className="strip-len">
+                        {(trimmedDurationMs(m) / 1000).toFixed(1)}
+                      </span>
+                    </button>
                   </li>
                 );
               })}
+              {!project.locked && (
+                <li>
+                  <button
+                    className="strip-add"
+                    onClick={() => nav(`/p/${id}/capture`)}
+                    aria-label="Record another moment at the end"
+                  >
+                    <Icon name="plus" size={18} strokeWidth={2.2} />
+                  </button>
+                </li>
+              )}
             </ul>
             <div className="group-footer">
-              Tap a moment to trim it or change its speed. Drag the handle to
-              reorder, swipe left to delete.
+              Tap a moment to put it on the stage. Press and hold to pick it up
+              and reorder.
             </div>
-          </div>
+
+            {/* The selected moment's controls, inline rather than buried in a
+                sheet you have to open and dismiss to compare two clips. */}
+            {selectedMoment && !project.locked && (
+              <div className="moment-card">
+                {selectedMoment.kind === 'still' ? (
+                  <>
+                    <div className="moment-card-head">
+                      <span>On screen for</span>
+                      <span className="moment-card-value">
+                        {(selectedMoment.durationMs / 1000).toFixed(1)}s
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={500}
+                      max={10000}
+                      step={250}
+                      value={selectedMoment.durationMs}
+                      aria-label="Time on screen"
+                      onChange={(e) =>
+                        void setMomentProps(id, selectedMoment.id, {
+                          durationMs: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </>
+                ) : (
+                  <>
+                    <div className="moment-card-head">
+                      <span>Trim</span>
+                      <span className="moment-card-value">
+                        {(trimmedDurationMs(selectedMoment) / 1000).toFixed(2)}s of{' '}
+                        {(selectedMoment.durationMs / 1000).toFixed(2)}s
+                      </span>
+                    </div>
+                    <TrimBar
+                      moment={selectedMoment}
+                      onChange={(startMs, endMs) =>
+                        void trimMoment(id, selectedMoment.id, startMs, endMs)
+                      }
+                    />
+                  </>
+                )}
+
+                <div className="moment-card-row">
+                  <Segmented
+                    options={[0.5, 1, 2]}
+                    value={selectedMoment.speed ?? 1}
+                    onChange={(v) =>
+                      void setMomentProps(id, selectedMoment.id, { speed: v })
+                    }
+                    format={(v) => `${v}×`}
+                  />
+                  <button
+                    className={`sq-btn${selectedMoment.muted ? ' on' : ''}`}
+                    aria-pressed={!!selectedMoment.muted}
+                    aria-label="Mute this moment"
+                    onClick={() =>
+                      void setMomentProps(id, selectedMoment.id, {
+                        muted: !selectedMoment.muted,
+                      })
+                    }
+                  >
+                    <Icon name="mic-off" size={17} />
+                  </button>
+                </div>
+
+                <div className="moment-card-row">
+                  <button
+                    className="btn tinted"
+                    onClick={() =>
+                      nav(
+                        `/p/${id}/capture?at=${order.indexOf(selectedMoment.id) + 1}`,
+                      )
+                    }
+                  >
+                    <Icon name="camera" size={17} />
+                    Record after this
+                  </button>
+                  <button
+                    className="btn plain destructive"
+                    onClick={() => {
+                      const i = order.indexOf(selectedMoment.id);
+                      void removeMoment(id, selectedMoment.id);
+                      setUndo({ momentId: selectedMoment.id });
+                      setSelected(order[i + 1] ?? order[i - 1] ?? null);
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -697,150 +706,6 @@ export default function Editor() {
           screen, and the one carrying a way back is the one worth showing. */}
       {toast && !undo && !orderUndo && (
         <Toast message={toast} onDone={() => setToast(null)} />
-      )}
-
-      {/* ---------------------------------------------- per-moment editing */}
-      {editingMoment && (
-        <Sheet
-          title={`Moment ${order.indexOf(editingMoment.id) + 1}`}
-          onClose={() => setEditing(null)}
-          leftAction={
-            <button className="nav-btn" onClick={() => setEditing(null)}>
-              Done
-            </button>
-          }
-        >
-          <ClipPreview moment={editingMoment} />
-
-          {editingMoment.kind === 'still' ? (
-            <div className="group">
-              <div className="group-header">On screen for</div>
-              <div className="list">
-                <div className="row">
-                  <span className="row-value" style={{ flex: '0 0 56px' }}>
-                    {(editingMoment.durationMs / 1000).toFixed(1)}s
-                  </span>
-                  <input
-                    type="range"
-                    min={500}
-                    max={10000}
-                    step={250}
-                    value={editingMoment.durationMs}
-                    onChange={(e) =>
-                      void setMomentProps(id, editingMoment.id, {
-                        durationMs: Number(e.target.value),
-                      })
-                    }
-                  />
-                </div>
-              </div>
-              <div className="group-footer">
-                How long this photo is held in the finished video.
-              </div>
-            </div>
-          ) : (
-            <div className="group">
-              <div className="group-header">Trim</div>
-              <div className="list">
-                <div className="row">
-                  <span className="row-value" style={{ flex: '0 0 52px' }}>
-                    Start
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={editingMoment.durationMs}
-                    step={50}
-                    value={editingMoment.trimStartMs}
-                    onChange={(e) =>
-                      void trimMoment(
-                        id,
-                        editingMoment.id,
-                        Math.min(
-                          Number(e.target.value),
-                          (editingMoment.trimEndMs ?? editingMoment.durationMs) - 100,
-                        ),
-                        editingMoment.trimEndMs,
-                      )
-                    }
-                  />
-                </div>
-                <div className="row">
-                  <span className="row-value" style={{ flex: '0 0 52px' }}>
-                    End
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={editingMoment.durationMs}
-                    step={50}
-                    value={editingMoment.trimEndMs ?? editingMoment.durationMs}
-                    onChange={(e) =>
-                      void trimMoment(
-                        id,
-                        editingMoment.id,
-                        editingMoment.trimStartMs,
-                        Math.max(
-                          Number(e.target.value),
-                          editingMoment.trimStartMs + 100,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-              </div>
-              <div className="group-footer">
-                {(trimmedDurationMs(editingMoment) / 1000).toFixed(2)}s of{' '}
-                {(editingMoment.durationMs / 1000).toFixed(2)}s
-              </div>
-            </div>
-          )}
-
-          <div className="group">
-            <div className="group-header">Speed</div>
-            <Segmented
-              options={[0.5, 1, 2] as const}
-              value={editingMoment.speed ?? 1}
-              onChange={(s) => void setMomentProps(id, editingMoment.id, { speed: s })}
-              format={(s) => `${s}×`}
-            />
-          </div>
-
-          <div className="group">
-            <ul className="list">
-              <li className="row">
-                <div className="row-main">
-                  <div className="row-title">Mute this moment</div>
-                </div>
-                <Switch
-                  checked={!!editingMoment.muted}
-                  onChange={(v) =>
-                    void setMomentProps(id, editingMoment.id, { muted: v })
-                  }
-                />
-              </li>
-            </ul>
-          </div>
-
-          <div className="group">
-            <ul className="list">
-              <li>
-                <button
-                  className="row destructive"
-                  onClick={() => {
-                    void removeMoment(id, editingMoment.id);
-                    setUndo({ momentId: editingMoment.id });
-                    setEditing(null);
-                  }}
-                >
-                  <div className="row-main">
-                    <div className="row-title">Delete moment</div>
-                  </div>
-                </button>
-              </li>
-            </ul>
-          </div>
-        </Sheet>
       )}
 
       {trashOpen && (

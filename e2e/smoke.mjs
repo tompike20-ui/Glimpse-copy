@@ -34,6 +34,17 @@ await page.addInitScript(() => {
   };
 });
 page.on('pageerror', (e) => errors.push(`PAGEERROR: ${e.message}`));
+// A bare "Failed to load resource" says nothing about what failed; the request
+// event carries the URL and the reason.
+page.on('requestfailed', (r) => {
+  const why = r.failure()?.errorText ?? '';
+  // A request cancelled by navigating away is not a defect; the favicon is
+  // routinely aborted this way.
+  if (why.includes('ERR_ABORTED')) return;
+  errors.push(
+    `REQUESTFAILED ${r.resourceType()} ${r.url().slice(0, 60)} — ${why}`,
+  );
+});
 page.on('console', (m) => {
   if (m.type() === 'error') errors.push(m.text());
 });
@@ -76,14 +87,13 @@ if ((await page.evaluate(() => window.__gumCalls)) !== 1) {
 
 // ---- editor ----
 await page.locator('.nav-btn', { hasText: 'Done' }).click();
-await page.waitForSelector('.scroll .list .row', { timeout: 20000 });
-step(5, `editor rows: ${await page.locator('.scroll .list .row').count()}`);
+await page.waitForSelector('.strip-tile', { timeout: 20000 });
+step(5, `filmstrip tiles: ${await page.locator('.strip-tile').count()}`);
 
 // ---- reorder via pointer events ----
-// The previous implementation used HTML5 drag-and-drop, which never fires for
-// touch on iOS. This drag proves the pointer-event path actually reorders.
-// Compare moment ids, not row text: rows are labelled by position, so a
-// successful reorder leaves the visible strings identical.
+// HTML5 drag-and-drop never fires for touch on iOS, so reordering is built on
+// pointer events. Compare moment ids, not visible text: tiles carry durations
+// rather than positions, so a successful reorder can leave the text identical.
 const ids = () =>
   page.evaluate(() =>
     [...document.querySelectorAll('[data-moment-id]')].map(
@@ -91,14 +101,13 @@ const ids = () =>
     ),
   );
 const before = await ids();
-const grip = page.locator('.scroll .list .row .grip').first();
-const box = await grip.boundingBox();
-const rowBox = await page.locator('.scroll .list .row').first().boundingBox();
-await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+const a = await page.locator('.strip-tile').first().boundingBox();
+const b = await page.locator('.strip-tile').nth(1).boundingBox();
+await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
 await page.mouse.down();
-await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + rowBox.height, {
-  steps: 10,
-});
+// Long-press to pick the tile up, then carry it past its neighbour.
+await page.waitForTimeout(400);
+await page.mouse.move(b.x + b.width / 2 + 6, b.y + b.height / 2, { steps: 12 });
 await page.mouse.up();
 await page.waitForTimeout(400);
 const after = await ids();
@@ -111,34 +120,33 @@ if (JSON.stringify(before) === JSON.stringify(after)) {
 }
 
 // ---- per-moment sheet: delete ----
-await page.locator('.scroll .list .row .row-main').first().click();
-await page.waitForSelector('.sheet', { timeout: 10000 });
-const rowsBeforeDelete = await page.locator('.scroll .list .row').count();
-await page.locator('.sheet .row.destructive').click();
-await page.waitForSelector('.sheet', { state: 'detached', timeout: 10000 });
+await page.locator('.strip-tile').first().click();
+await page.waitForSelector('.moment-card', { timeout: 10000 });
+const rowsBeforeDelete = await page.locator('.strip-tile').count();
+await page.locator('.moment-card .btn.destructive').click();
 await page.waitForFunction(
-  (n) => document.querySelectorAll('.scroll .list .row').length === n - 1,
+  (n) => document.querySelectorAll('.strip-tile').length === n - 1,
   rowsBeforeDelete,
   { timeout: 10000 },
 );
-step(7, `after delete: ${await page.locator('.scroll .list .row').count()} rows`);
+step(7, `after delete: ${await page.locator('.strip-tile').count()} tiles`);
 
 // ---- undo brings the moment back ----
 // Deleting used to erase the file immediately, so a mis-swipe was permanent.
 await page.locator('.toast-action', { hasText: 'Undo' }).click();
 await page.waitForFunction(
-  (n) => document.querySelectorAll('.scroll .list .row').length === n,
+  (n) => document.querySelectorAll('.strip-tile').length === n,
   rowsBeforeDelete,
   { timeout: 10000 },
 );
-step('7.5', `undo restored it: ${await page.locator('.scroll .list .row').count()} rows`);
+step('7.5', `undo restored it: ${await page.locator('.strip-tile').count()} tiles`);
 
 // Delete it again so later steps see the same state as before.
-await page.locator('.scroll .list .row .row-main').first().click();
-await page.waitForSelector('.sheet', { timeout: 10000 });
-await page.locator('.sheet .row.destructive').click();
+await page.locator('.strip-tile').first().click();
+await page.waitForSelector('.moment-card', { timeout: 10000 });
+await page.locator('.moment-card .btn.destructive').click();
 await page.waitForFunction(
-  (n) => document.querySelectorAll('.scroll .list .row').length === n - 1,
+  (n) => document.querySelectorAll('.strip-tile').length === n - 1,
   rowsBeforeDelete,
   { timeout: 10000 },
 );
@@ -149,11 +157,11 @@ await page.reload({ waitUntil: 'networkidle' });
 if (await page.locator('.onboard').count()) {
   errors.push('onboarding reappeared after being dismissed');
 }
-await page.waitForSelector('.scroll .list .row', { timeout: 20000 });
-step(8, `persisted: ${(await page.locator('.row-sub').first().innerText()).trim()}`);
+await page.waitForSelector('.poster', { timeout: 20000 });
+step(8, `persisted: ${(await page.locator('.poster-sub').first().innerText()).trim()}`);
 
 // ---- export: stream copy ----
-await page.locator('.scroll .list .row').first().click();
+await page.locator('.poster-open').first().click();
 await page.waitForSelector('.toolbar', { timeout: 20000 });
 
 // ---- preview plays the whole Glimpse without exporting ----
@@ -198,26 +206,17 @@ step(8.5, `preview reached end — ${totalLabel.replace(/\n/g, ' | ')}`);
 await page.locator('.preview .btn').click();
 await page.waitForSelector('.preview', { state: 'detached', timeout: 10000 });
 
-// ---- grid view and long-press reorder ----
-await page.locator('.viewtoggle button', { hasText: 'Grid' }).click();
-await page.waitForSelector('.grid .tile', { timeout: 10000 });
-const tiles = await page.locator('.grid .tile').count();
-const gridBefore = await ids();
-const t0 = await page.locator('.grid li').first().boundingBox();
-const t1 = await page.locator('.grid li').nth(1).boundingBox();
-await page.mouse.move(t0.x + t0.width / 2, t0.y + t0.height / 2);
-await page.mouse.down();
-await page.waitForTimeout(420); // exceed the long-press threshold
-await page.mouse.move(t1.x + t1.width / 2, t1.y + t1.height / 2, { steps: 12 });
-await page.mouse.up();
-await page.waitForTimeout(400);
-const gridAfter = await ids();
-step('8.7', `grid: ${tiles} tiles, order ${gridBefore.join() === gridAfter.join() ? 'UNCHANGED' : 'changed'}`);
-if (gridBefore.join() === gridAfter.join()) {
-  errors.push('long-press reorder in grid did nothing');
+// ---- the filmstrip scrolls rather than paging into a second view ----
+// The list/grid toggle is gone: the strip is horizontal, so sixty moments
+// scroll sideways instead of needing a separate screen.
+const stripScrollable = await page.evaluate(() => {
+  const el = document.querySelector('.strip');
+  return el ? { w: el.clientWidth, sw: el.scrollWidth, overflow: getComputedStyle(el).overflowX } : null;
+});
+step('8.7', `filmstrip: ${await page.locator('.strip-tile').count()} tiles, overflow-x ${stripScrollable?.overflow}`);
+if (stripScrollable?.overflow !== 'auto') {
+  errors.push('the filmstrip does not scroll horizontally');
 }
-await page.locator('.viewtoggle button', { hasText: 'List' }).click();
-await page.waitForSelector('.scroll .list .row', { timeout: 10000 });
 
 /** Export now asks what kind first, so every export goes through the sheet. */
 async function startVideoExport() {
@@ -250,33 +249,43 @@ if (copyOut.size < 1000) errors.push('stream-copy export produced an empty file'
 await page.evaluate(() => {
   window.__exported = null;
 });
-await page.locator('.scroll .list .row .row-main').first().click();
-await page.waitForSelector('.sheet', { timeout: 10000 });
+await page.locator('.strip-tile').first().click();
+await page.waitForSelector('.moment-card', { timeout: 10000 });
 
-// ---- the moment sheet shows the clip it is editing ----
-// Trim used to be sliders over nothing but numbers.
-await page.waitForSelector('.clip-stage video', { timeout: 20000 });
-const trimBefore = (await page.locator('.sheet .group-footer').first().innerText()).trim();
-const trimStart = page.locator('.sheet input[type=range]').first();
-await trimStart.fill('400');
+// ---- the editor shows the moment it is editing ----
+// Trim used to be two sliders over nothing but numbers, in a sheet that hid
+// the clip while you adjusted it.
+await page.waitForSelector('.editor-stage video', { timeout: 20000 });
+const trimBefore = (await page.locator('.moment-card-value').first().innerText()).trim();
+
+// Drag the start handle a third of the way in. It is a pointer-driven widget,
+// not a range input, because a 3px edge is not a thumb-sized target.
+const bar = await page.locator('.trimbar').boundingBox();
+const handle = await page.locator('.trimbar-handle.start').boundingBox();
+await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+await page.mouse.down();
+await page.mouse.move(bar.x + bar.width * 0.35, handle.y + handle.height / 2, {
+  steps: 10,
+});
+await page.mouse.up();
 await page.waitForTimeout(400);
+
 const clip = await page.evaluate(() => {
-  const v = document.querySelector('.clip-stage video');
+  const v = document.querySelector('.editor-stage video');
   return { t: v?.currentTime ?? -1, w: v?.videoWidth ?? 0 };
 });
-const trimAfter = (await page.locator('.sheet .group-footer').first().innerText()).trim();
-step('9.5', `clip preview: "${trimBefore}" → "${trimAfter}", playhead ${clip.t.toFixed(2)}s`);
-if (!clip.w) errors.push('the clip preview never decoded a frame');
+const trimAfter = (await page.locator('.moment-card-value').first().innerText()).trim();
+step('9.5', `trim: "${trimBefore}" → "${trimAfter}", stage playhead ${clip.t.toFixed(2)}s`);
+if (!clip.w) errors.push('the editor stage never decoded a frame');
 // Dragging the start handle past the playhead must pull the picture with it.
-if (clip.t < 0.39) {
-  errors.push(`clip preview playhead stayed at ${clip.t.toFixed(2)}s, outside the trim`);
+if (clip.t < 0.1) {
+  errors.push(`stage playhead stayed at ${clip.t.toFixed(2)}s, outside the trim`);
 }
-if (trimBefore === trimAfter) errors.push('the trim readout did not follow the slider');
+if (trimBefore === trimAfter) errors.push('the trim readout did not follow the handle');
 
-await page.locator('.sheet .segmented button', { hasText: '2×' }).click();
-await page.locator('.sheet .nav-btn', { hasText: 'Done' }).click();
-await page.waitForSelector('.sheet', { state: 'detached', timeout: 10000 });
-step(10, `applied 2x speed: ${(await page.locator('.row-title').first().innerText()).trim()}`);
+await page.locator('.moment-card .segmented button', { hasText: '2×' }).click();
+await page.waitForTimeout(300);
+step(10, `applied 2x speed: ${(await page.locator('.editor-stage-len').innerText()).trim()}`);
 
 await startVideoExport();
 await page.waitForFunction(() => window.__exported, null, { timeout: 600000 });
@@ -293,28 +302,26 @@ if (reOut < 1000) errors.push('re-encoded export produced an empty file');
 await page.evaluate(() => {
   window.__exported = null;
 });
-const rowsBefore = await page.locator('.scroll .list .row').count();
+const rowsBefore = await page.locator('.strip-tile').count();
 await page
   .locator('input[type=file][accept*="image"]')
   .setInputFiles('./public/icons/icon-512.png');
 await page.waitForFunction(
-  (n) => document.querySelectorAll('.scroll .list .row').length === n + 1,
+  (n) => document.querySelectorAll('.strip-tile').length === n + 1,
   rowsBefore,
   { timeout: 30000 },
 );
-step(12, `imported photo: ${(await page.locator('.row-sub').last().innerText()).trim()}`);
+await page.locator('.strip-tile').last().click();
+await page.waitForTimeout(300);
+step(12, `imported photo: ${(await page.locator('.editor-stage-len').innerText()).trim()}`);
 
 // A photo's on-screen time is editable; it used to be hard-coded to 2s.
-await page.locator('.scroll .list .row .row-main').last().click();
-await page.waitForSelector('.sheet', { timeout: 10000 });
-const durBefore = (await page.locator('.scroll .list .row-title').last().innerText()).trim();
-await page.locator('.sheet input[type=range]').first().fill('6000');
+const durBefore = (await page.locator('.strip-len').last().innerText()).trim();
+await page.locator('.moment-card input[type=range]').first().fill('6000');
 await page.waitForTimeout(400);
-const durAfter = (await page.locator('.scroll .list .row-title').last().innerText()).trim();
+const durAfter = (await page.locator('.strip-len').last().innerText()).trim();
 step('12.5', `still duration: ${durBefore} → ${durAfter}`);
 if (durBefore === durAfter) errors.push('still duration did not change');
-await page.locator('.sheet .nav-btn', { hasText: 'Done' }).click();
-await page.waitForSelector('.sheet', { state: 'detached', timeout: 10000 });
 
 await startVideoExport();
 await page.waitForFunction(() => window.__exported, null, { timeout: 600000 });
@@ -377,6 +384,54 @@ if (snap.w !== 1080 || snap.h !== 1080) {
   errors.push(`snapshot was ${snap.w}×${snap.h}, expected 1080×1080 for a square Glimpse`);
 }
 if (snap.lit < 0.5) errors.push('snapshot came out blank');
+
+// ---- recording into the middle of the timeline ----
+// moment.add gained an optional index. Appending is still the default, so
+// journals written before this existed replay unchanged.
+await page.locator('.strip-tile').first().click();
+await page.waitForSelector('.moment-card', { timeout: 10000 });
+const orderBeforeInsert = await ids();
+await page.locator('.moment-card .btn.tinted', { hasText: 'Record after this' }).click();
+await page.waitForSelector('.shutter[data-ready="true"]:not([disabled])', {
+  timeout: 30000,
+});
+if (!page.url().includes('at=1')) {
+  errors.push(`insert position missing from the capture URL: ${page.url()}`);
+}
+await page.locator('.shutter').click();
+await page.waitForSelector('.review', { timeout: 20000 });
+await page.locator('.review-actions .btn.filled').click();
+await page.waitForSelector('.review', { state: 'detached', timeout: 20000 });
+await page.locator('.nav-btn', { hasText: 'Done' }).click();
+await page.waitForSelector('.strip-tile', { timeout: 20000 });
+const orderAfterInsert = await ids();
+step(15, `insert: ${orderBeforeInsert.length} → ${orderAfterInsert.length} moments`);
+if (orderAfterInsert.length !== orderBeforeInsert.length + 1) {
+  errors.push('recording into the middle did not add a moment');
+}
+// The new moment must land at index 1, not on the end.
+if (orderAfterInsert[0] !== orderBeforeInsert[0]) {
+  errors.push('inserting displaced the first moment');
+}
+if (orderAfterInsert.includes(orderBeforeInsert[1]) &&
+    orderAfterInsert.indexOf(orderBeforeInsert[1]) !== 2) {
+  errors.push(
+    `inserted moment did not land at position 2 — order is ${orderAfterInsert.join(',')}`,
+  );
+}
+
+// ---- playing a Glimpse from the list, without opening the editor ----
+await page.locator('.nav-btn', { hasText: 'Glimpses' }).click();
+await page.waitForSelector('.poster', { timeout: 20000 });
+await page.locator('.poster-play').first().click();
+await page.waitForSelector('.preview', { timeout: 20000 });
+const listPlay = (await page.locator('.preview-meta').innerText()).replace(/\n/g, ' | ');
+step(16, `played from the list: ${listPlay}`);
+await page.locator('.preview .btn', { hasText: 'Done' }).click();
+await page.waitForSelector('.preview', { state: 'detached', timeout: 10000 });
+if (!(await page.locator('.poster').count())) {
+  errors.push('closing list playback did not return to the Glimpses list');
+}
 
 console.log(`\n=== ERRORS (${errors.length}) ===`);
 errors.forEach((e) => console.log(e));

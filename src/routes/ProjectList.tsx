@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../store/useApp';
-import { getBlob } from '../storage/db';
-import type { Aspect, Project } from '../types';
+import type { Aspect, Moment, Project } from '../types';
 import { projectDurationMs } from '../types';
+import { Preview } from '../ui/Preview';
+import { Frame } from '../ui/Frame';
 import { Icon } from '../ui/Icon';
 import {
   NavBar,
@@ -37,40 +38,49 @@ function relativeDay(ts: number): string {
   });
 }
 
-/** Cover frame for a Glimpse, read from its first moment. */
-function Cover({ project }: { project: Project }) {
-  const [url, setUrl] = useState<string | null>(null);
+/**
+ * The Glimpse's own footage, filling the card.
+ *
+ * The list used to be grouped rows with 52px thumbnails — a settings screen
+ * that happened to contain video. The footage is the only thing that tells one
+ * Glimpse from another at a glance, so it leads.
+ */
+function Poster({ project }: { project: Project }) {
   const firstId = project.momentIds[0];
-  const blobKey = useApp((s) =>
-    firstId ? s.state.moments[firstId]?.blobKey : undefined,
-  );
-  const kind = useApp((s) => (firstId ? s.state.moments[firstId]?.kind : undefined));
+  const first = useApp((s) => (firstId ? s.state.moments[firstId] : undefined));
 
-  useEffect(() => {
-    if (!blobKey) return;
-    let made: string | null = null;
-    let cancelled = false;
-    void getBlob(blobKey).then((b) => {
-      if (!b || cancelled) return;
-      made = URL.createObjectURL(b);
-      setUrl(made);
-    });
-    return () => {
-      cancelled = true;
-      if (made) URL.revokeObjectURL(made);
-    };
-  }, [blobKey]);
-
-  if (!url)
+  if (!first) {
     return (
-      <div className="thumb brand-mark">
-        <Icon name={project.locked ? 'lock' : 'film'} size={22} />
-      </div>
+      <span className="poster-empty">
+        <Icon name={project.locked ? 'lock' : 'film'} size={30} strokeWidth={1.5} />
+      </span>
     );
-  return kind === 'still' ? (
-    <img className="thumb" src={url} alt="" />
-  ) : (
-    <video className="thumb" src={url} muted playsInline preload="metadata" />
+  }
+  return (
+    <Frame
+      moment={first}
+      className="poster-media"
+      placeholder={<span className="poster-empty" />}
+    />
+  );
+}
+
+/**
+ * A short strip of ticks, reading as "this is made of pieces".
+ *
+ * The mockup filled a varying number of ticks per card, which on inspection
+ * encodes nothing a viewer could read — the exact count is spelled out in
+ * words directly below. So it caps at five and is honest about being a motif
+ * rather than a gauge.
+ */
+function Ticks({ count }: { count: number }) {
+  if (count === 0) return null;
+  return (
+    <span className="poster-ticks" aria-hidden="true">
+      {Array.from({ length: Math.min(count, 5) }, (_, i) => (
+        <i key={i} />
+      ))}
+    </span>
   );
 }
 
@@ -86,6 +96,8 @@ export default function ProjectList() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [aspect, setAspect] = useState<Aspect>('portrait');
+  /** Id of the Glimpse being played inline, if any. */
+  const [playing, setPlaying] = useState<string | null>(null);
 
   async function create() {
     const id = await createProject(name.trim() || 'Untitled', aspect);
@@ -98,10 +110,33 @@ export default function ProjectList() {
     .map((id) => state.projects[id])
     .filter(Boolean);
 
+  const totalMs = projects.reduce(
+    (sum, p) => sum + projectDurationMs(state, p.id),
+    0,
+  );
+
+  const playingProject = playing ? state.projects[playing] : null;
+  /* Memoised because the player reloads its blobs whenever this array's
+     identity changes — a fresh array per render made it revoke and re-create
+     every URL continuously, and any element still holding the old one failed
+     to load it. */
+  const playingMoments = useMemo(
+    () =>
+      (playingProject?.momentIds ?? [])
+        .map((mid) => state.moments[mid])
+        .filter((m): m is Moment => !!m),
+    [playingProject?.momentIds, state.moments],
+  );
+
   return (
     <div className="screen">
       <NavBar
         title="Glimpses"
+        subtitle={
+          projects.length > 0
+            ? `${projects.length} Glimpse${projects.length === 1 ? '' : 's'} · ${fmtDuration(totalMs)} of footage`
+            : undefined
+        }
         scrolled={scrolled}
         right={
           <button
@@ -139,8 +174,8 @@ export default function ProjectList() {
             video.
           </div>
         ) : (
-          <div className="group">
-            <ul className="list">
+          <div className="posters">
+            <ul>
               {projects.map((p) => (
                 <li key={p.id}>
                   <SwipeToDelete
@@ -151,41 +186,59 @@ export default function ProjectList() {
                       }
                     }}
                   >
-                    <button
-                      className="row inset-sep"
-                      onClick={() => nav(`/p/${p.id}`)}
-                    >
-                      <Cover project={p} />
-                      <div className="row-main">
-                        <div className="row-title">
+                    <div className="poster">
+                      <button
+                        className="poster-open"
+                        onClick={() => nav(`/p/${p.id}`)}
+                        aria-label={`Open ${p.name}`}
+                      >
+                        <Poster project={p} />
+                        <span className="poster-scrim" />
+                        <Ticks count={p.momentIds.length} />
+
+                        <span className="poster-pills">
                           {p.locked && (
-                            <Icon
-                              name="lock"
-                              size={14}
-                              strokeWidth={2}
-                              className="inline-lock"
-                            />
+                            <span className="poster-pill">
+                              <Icon name="lock" size={11} strokeWidth={2.4} />
+                              Locked
+                            </span>
                           )}
-                          {p.name}
-                        </div>
-                        <div className="row-sub">
-                          {p.momentIds.length} moment
-                          {p.momentIds.length === 1 ? '' : 's'} ·{' '}
-                          {fmtDuration(projectDurationMs(state, p.id))}
-                        </div>
-                        <div className="row-sub">{relativeDay(p.updatedAt)}</div>
-                      </div>
-                      <span className="chevron">
-                        <Icon name="chevron-right" size={17} strokeWidth={2.4} />
-                      </span>
-                    </button>
+                          {p.momentIds.length > 0 && (
+                            <span className="poster-pill">
+                              {fmtDuration(projectDurationMs(state, p.id))}
+                            </span>
+                          )}
+                        </span>
+
+                        <span className="poster-meta">
+                          <span className="poster-name">{p.name}</span>
+                          <span className="poster-sub">
+                            {p.momentIds.length} moment
+                            {p.momentIds.length === 1 ? '' : 's'} ·{' '}
+                            {relativeDay(p.updatedAt)}
+                          </span>
+                        </span>
+                      </button>
+
+                      {/* Watching a Glimpse should not require opening the
+                          editor first — playing it back is the whole point of
+                          collecting the moments. */}
+                      {p.momentIds.length > 0 && (
+                        <button
+                          className="poster-play"
+                          onClick={() => setPlaying(p.id)}
+                          aria-label={`Play ${p.name}`}
+                        >
+                          <Icon name="play" size={18} />
+                        </button>
+                      )}
+                    </div>
                   </SwipeToDelete>
                 </li>
               ))}
             </ul>
             <div className="group-footer">
-              Swipe a Glimpse left to delete it. Locked Glimpses cannot be
-              deleted or edited.
+              Tap a Glimpse to edit it, or play it here. Swipe left to delete.
             </div>
           </div>
         )}
@@ -200,6 +253,14 @@ export default function ProjectList() {
           New Glimpse
         </button>
       </div>
+
+      {playingProject && playingMoments.length > 0 && (
+        <Preview
+          moments={playingMoments}
+          music={playingProject.music}
+          onClose={() => setPlaying(null)}
+        />
+      )}
 
       {creating && (
         <Sheet

@@ -43,7 +43,8 @@ interface Store {
   setLocked: (id: string, locked: boolean) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
 
-  addMoment: (m: Moment, blob: Blob) => Promise<void>;
+  /** `at` inserts at that index; omitted appends. */
+  addMoment: (m: Moment, blob: Blob, at?: number) => Promise<void>;
   removeMoment: (projectId: string, momentId: string) => Promise<void>;
   restoreMoment: (projectId: string, momentId: string) => Promise<void>;
   purgeMoment: (momentId: string) => Promise<void>;
@@ -158,11 +159,11 @@ export const useApp = create<Store>((set, get) => {
       void get().refreshQuota();
     },
 
-    async addMoment(m, blob) {
+    async addMoment(m, blob, at) {
       // Blob before journal: an entry pointing at a missing file would be a
       // broken project, whereas a file with no entry is a recoverable orphan.
       await putBlob(m.blobKey, blob);
-      await commit({ t: 'moment.add', moment: m, ts: Date.now() });
+      await commit({ t: 'moment.add', moment: m, at, ts: Date.now() });
       void get().refreshQuota();
     },
 

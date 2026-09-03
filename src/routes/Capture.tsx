@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { CaptureSession, type RecordedMoment } from '../capture/session';
 import { newId, useApp } from '../store/useApp';
 import { ASPECT_RATIO, snapToBeat, type Moment } from '../types';
@@ -14,8 +14,17 @@ const SILENT_RMS = 0.004;
 export default function Capture() {
   const { id = '' } = useParams();
   const nav = useNavigate();
+  const [search] = useSearchParams();
   const project = useApp((s) => s.state.projects[id]);
   const addMoment = useApp((s) => s.addMoment);
+
+  /* ?at=N records into the middle of the timeline rather than appending. A
+     run of moments recorded in one visit stays in the order it was shot, so
+     the insertion point advances with each keep. */
+  const atParam = search.get('at');
+  const insertAt = useRef<number | null>(
+    atParam === null || Number.isNaN(Number(atParam)) ? null : Number(atParam),
+  );
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const sessionRef = useRef<CaptureSession | null>(null);
@@ -106,7 +115,8 @@ export default function Capture() {
         source: 'capture',
         kind: 'video',
       };
-      await addMoment(moment, rec.blob);
+      await addMoment(moment, rec.blob, insertAt.current ?? undefined);
+      if (insertAt.current !== null) insertAt.current += 1;
       setCount((c) => c + 1);
     },
     [addMoment, id],

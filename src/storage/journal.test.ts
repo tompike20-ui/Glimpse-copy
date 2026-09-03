@@ -221,3 +221,74 @@ describe('trash', () => {
     expect(expired[0].blobKey).toBe('b-m1');
   });
 });
+
+describe('inserting a moment at a position', () => {
+  const base: JournalEntry[] = [
+    createP,
+    { t: 'moment.add', moment: moment('m1', 'p1'), ts },
+    { t: 'moment.add', moment: moment('m2', 'p1'), ts },
+    { t: 'moment.add', moment: moment('m3', 'p1'), ts },
+  ];
+
+  it('appends when no position is given, as every old entry does', () => {
+    // The guarantee that matters: journals written before insertion existed
+    // carry no `at`, and must replay exactly as they used to.
+    expect(replay(base).projects.p1.momentIds).toEqual(['m1', 'm2', 'm3']);
+  });
+
+  it('inserts at the given index', () => {
+    const s = replay([
+      ...base,
+      { t: 'moment.add', moment: moment('mx', 'p1'), at: 1, ts },
+    ]);
+    expect(s.projects.p1.momentIds).toEqual(['m1', 'mx', 'm2', 'm3']);
+  });
+
+  it('inserts at the front', () => {
+    const s = replay([
+      ...base,
+      { t: 'moment.add', moment: moment('mx', 'p1'), at: 0, ts },
+    ]);
+    expect(s.projects.p1.momentIds).toEqual(['mx', 'm1', 'm2', 'm3']);
+  });
+
+  it('clamps a position past the end rather than leaving a hole', () => {
+    const s = replay([
+      ...base,
+      { t: 'moment.add', moment: moment('mx', 'p1'), at: 99, ts },
+    ]);
+    expect(s.projects.p1.momentIds).toEqual(['m1', 'm2', 'm3', 'mx']);
+  });
+
+  it('clamps a negative position', () => {
+    const s = replay([
+      ...base,
+      { t: 'moment.add', moment: moment('mx', 'p1'), at: -5, ts },
+    ]);
+    expect(s.projects.p1.momentIds).toEqual(['mx', 'm1', 'm2', 'm3']);
+  });
+
+  it('keeps a run recorded in one visit in the order it was shot', () => {
+    // Capture advances its own insertion point per keep; this is what that
+    // produces, and getting it wrong would reverse the run.
+    const s = replay([
+      ...base,
+      { t: 'moment.add', moment: moment('a', 'p1'), at: 1, ts },
+      { t: 'moment.add', moment: moment('b', 'p1'), at: 2, ts },
+      { t: 'moment.add', moment: moment('c', 'p1'), at: 3, ts },
+    ]);
+    expect(s.projects.p1.momentIds).toEqual(['m1', 'a', 'b', 'c', 'm2', 'm3']);
+  });
+
+  it('never loses a moment, whatever the position', () => {
+    for (const at of [-1, 0, 1, 2, 3, 4, 100]) {
+      const s = replay([
+        ...base,
+        { t: 'moment.add', moment: moment('mx', 'p1'), at, ts },
+      ]);
+      expect(s.projects.p1.momentIds).toHaveLength(4);
+      expect(new Set(s.projects.p1.momentIds).size).toBe(4);
+      expect(s.projects.p1.momentIds).toContain('mx');
+    }
+  });
+});

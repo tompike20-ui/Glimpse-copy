@@ -190,6 +190,16 @@ button {
   transform-origin: left bottom;
 }
 
+.nav-sub {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--label-2);
+  margin-top: 2px;
+}
+
 .nav.scrolled .nav-large {
   opacity: 0;
   transform: scale(0.9);
@@ -1292,97 +1302,12 @@ svg {
   pointer-events: none;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding: 0 var(--gutter);
-  list-style: none;
-  margin: 0;
-}
-
-.tile {
-  position: relative;
-  aspect-ratio: 1;
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--fill);
-  width: 100%;
-}
-
-.tile video,
-.tile img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.tile .badge {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.6);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  display: grid;
-  place-items: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.tile .len {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  padding: 2px 6px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.6);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  color: #fff;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.tile .flagdot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--red);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
-}
-
-.tile.lifted {
-  transform: scale(1.06);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
-  z-index: 3;
-}
-
 .listbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 0 var(--gutter) 10px;
-}
-
-.viewtoggle {
-  display: flex;
-  gap: 2px;
-  background: var(--fill);
-  border-radius: 8px;
-  padding: 2px;
-  width: fit-content;
+  margin: 18px var(--gutter) 10px;
 }
 
 /* A text action, so it reads as secondary to the segmented control it sits
@@ -1397,19 +1322,6 @@ svg {
   /* Tappable to 44pt without the label looking padded. */
   padding: 12px 2px;
   margin: -12px 0;
-}
-
-.viewtoggle button {
-  padding: 5px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--label-2);
-}
-
-.viewtoggle button[aria-pressed='true'] {
-  background: var(--bg-elevated);
-  color: var(--label);
-  font-weight: 600;
 }
 
 .toast-msg {
@@ -1427,6 +1339,392 @@ svg {
   width: 100%;
   height: 100%;
   background: var(--fill);
+}
+
+/* ------------------------------------------------- editor stage and strip */
+
+/* Deliberately NOT `.stage` — that name already belongs to the capture
+   viewfinder, which is a flex-filling size container. Reusing it here gave the
+   editor a hero that had a box but zero height, clipped its own contents and
+   took no space in flow: invisible on screen while every selector still
+   matched. */
+.editor-stage {
+  margin: 4px var(--gutter) 0;
+}
+
+/* The stage reuses the clip player, so it inherits its sizing and only has to
+   restate the height the hero wants. */
+.editor-stage .clip-preview {
+  padding: 0;
+}
+
+.editor-stage .clip-stage {
+  aspect-ratio: auto;
+  height: 232px;
+  max-height: 34vh;
+  border-radius: 18px;
+}
+
+.editor-stage-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--label-2);
+  padding: 9px 2px 0;
+}
+
+.editor-stage-index {
+  font-weight: 600;
+  color: var(--label);
+  white-space: nowrap;
+}
+
+.editor-stage-len {
+  text-align: right;
+  min-width: 0;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* A Glimpse is a horizontal thing. A vertical row per moment stopped being
+   scannable somewhere around the tenth clip. */
+.strip {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--gutter) 2px;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
+}
+
+.strip-tile {
+  position: relative;
+  width: 60px;
+  height: 84px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--fill);
+  flex: none;
+  display: block;
+  padding: 0;
+}
+
+.strip-tile img,
+.strip-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.strip-tile.on {
+  box-shadow: 0 0 0 2.5px var(--brand);
+}
+
+.strip-tile.lifted {
+  opacity: 0.9;
+  transform: scale(1.06);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.strip-len {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.strip-add {
+  width: 34px;
+  height: 84px;
+  border-radius: 10px;
+  background: var(--fill);
+  color: var(--brand-ink);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+/* ------------------------------------------------- selected moment card */
+
+.moment-card {
+  margin: 16px var(--gutter) 0;
+  background: var(--bg-elevated);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.moment-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.moment-card-value {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--label-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.moment-card-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.moment-card-row .segmented {
+  flex: 1;
+  margin: 0;
+}
+
+.moment-card-row .btn {
+  width: auto;
+  flex: 1;
+  padding: 12px;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.moment-card-row .btn.plain {
+  flex: 0 0 auto;
+  padding: 12px 14px;
+}
+
+.sq-btn {
+  flex: none;
+  width: 44px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--fill);
+  color: var(--label-2);
+  display: grid;
+  place-items: center;
+}
+
+.sq-btn.on {
+  background: var(--brand);
+  color: #fff;
+}
+
+/* ------------------------------------------------------------- trim bar */
+
+.trimbar {
+  position: relative;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--fill);
+  overflow: hidden;
+  touch-action: none;
+}
+
+.trimbar-keep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--brand-soft);
+  border-left: 3px solid var(--brand);
+  border-right: 3px solid var(--brand);
+}
+
+/* The visible edge is 3px, which no thumb can hit. The handle is a wider
+   transparent target straddling it. */
+.trimbar-handle {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 32px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.trimbar-handle.start {
+  left: -16px;
+}
+
+.trimbar-handle.end {
+  right: -16px;
+}
+
+.trimbar-handle:focus-visible {
+  outline: 2px solid var(--brand-ink);
+  outline-offset: 2px;
+}
+
+/* Silent moments are flagged on the tile itself — a clip that recorded no
+   sound is the defect this app exists to prevent. */
+.flagdot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--red);
+}
+
+/* ----------------------------------------------------------- poster cards */
+
+.posters ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--gutter);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The card is the swipe surface, so its corners have to be the rounded ones —
+   a square wrapper would show its own edges behind the card. */
+.posters .swipe {
+  border-radius: 18px;
+  background: var(--fill);
+}
+
+.poster {
+  position: relative;
+  height: 208px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--fill);
+}
+
+.poster-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  text-align: left;
+}
+
+.poster-media,
+.poster-empty {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--grad);
+}
+
+/* Text sits on unknown footage, so it needs its own contrast rather than
+   trusting the frame underneath to be dark. */
+.poster-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.82) 0%,
+    rgba(0, 0, 0, 0.15) 52%,
+    rgba(0, 0, 0, 0.3) 100%
+  );
+}
+
+.poster-ticks {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  gap: 3px;
+}
+
+.poster-ticks i {
+  width: 15px;
+  height: 3px;
+  border-radius: 2px;
+  background: #ffb020;
+}
+
+.poster-pills {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.poster-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.poster-meta {
+  position: absolute;
+  left: 16px;
+  /* Clears the play button so a long name wraps above it, not under it. */
+  right: 72px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+}
+
+.poster-name {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poster-sub {
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.75);
+  margin-top: 2px;
+}
+
+.poster-play {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #000;
+  display: grid;
+  place-items: center;
+  padding-left: 3px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
 
 /* ---------------------------------------------------------- clip preview */

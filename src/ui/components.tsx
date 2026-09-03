@@ -16,12 +16,15 @@ import {
  */
 export function NavBar({
   title,
+  subtitle,
   left,
   right,
   scrolled,
   large = true,
 }: {
   title: string;
+  /** Shown under a large title, and hidden with it once the page scrolls. */
+  subtitle?: string;
   left?: ReactNode;
   right?: ReactNode;
   scrolled: boolean;
@@ -36,7 +39,12 @@ export function NavBar({
           {right}
         </div>
       </div>
-      {large && <div className="nav-large">{title}</div>}
+      {large && (
+        <div className="nav-large">
+          {title}
+          {subtitle && <span className="nav-sub">{subtitle}</span>}
+        </div>
+      )}
     </div>
   );
 }

@@ -15,23 +15,39 @@ export function ClipPreview({ moment }: { moment: Moment }) {
   const [url, setUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const liveUrl = useRef<string | null>(null);
 
   const startS = moment.trimStartMs / 1000;
   const endS = (moment.trimEndMs ?? moment.durationMs) / 1000;
 
   useEffect(() => {
-    let made: string | null = null;
     let cancelled = false;
+    setUrl(null);
     void getBlob(moment.blobKey).then((b) => {
       if (!b || cancelled) return;
-      made = URL.createObjectURL(b);
-      setUrl(made);
+      setUrl(URL.createObjectURL(b));
     });
     return () => {
       cancelled = true;
-      if (made) URL.revokeObjectURL(made);
     };
   }, [moment.blobKey]);
+
+  /* Free the previous URL only once React has committed a render that no
+     longer points at it. Revoking in the loader's cleanup runs *before* that
+     render, so the DOM briefly holds a dead src and the browser reports a
+     failed load. */
+  useEffect(() => {
+    const prev = liveUrl.current;
+    liveUrl.current = url;
+    if (prev && prev !== url) URL.revokeObjectURL(prev);
+  }, [url]);
+
+  useEffect(
+    () => () => {
+      if (liveUrl.current) URL.revokeObjectURL(liveUrl.current);
+    },
+    [],
+  );
 
   /* Hold the playhead inside the trim window, and loop within it. Dragging a
      handle past the playhead should snap the picture, not leave it stranded

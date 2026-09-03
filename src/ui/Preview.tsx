@@ -59,11 +59,22 @@ export function Preview({ moments, music, onClose, onSaveFrame, saving }: Props)
 
   const total = moments.reduce((s, m) => s + trimmedDurationMs(m), 0);
 
+  /* Which files this player needs, as a value rather than an array identity.
+     Keying the loader below on `moments` itself means any caller that rebuilds
+     the array on render makes it revoke and re-fetch everything each time. */
+  const sourceKey = moments.map((m) => m.blobKey).join(',') + `|${music?.blobKey ?? ''}`;
+
   /* Blob URLs for every moment. These are references, not copies, so holding
      them all at once is cheap even for a long Glimpse. */
   useEffect(() => {
     let cancelled = false;
     const made: string[] = [];
+
+    // Clear before revoking: the cleanup below frees every URL in the previous
+    // set, and any element still rendered with one would fail to load it.
+    setUrls({});
+    setMusicUrl(null);
+    setReady(false);
 
     void (async () => {
       const next: Record<string, string> = {};
@@ -92,7 +103,9 @@ export function Preview({ moments, music, onClose, onSaveFrame, saving }: Props)
       cancelled = true;
       made.forEach((u) => URL.revokeObjectURL(u));
     };
-  }, [moments, music]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey stands
+    // in for moments/music by value; see the comment above.
+  }, [sourceKey]);
 
   const current = moments[index];
   const next = moments[index + 1];

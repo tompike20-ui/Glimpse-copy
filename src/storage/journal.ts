@@ -28,7 +28,9 @@ export type JournalEntry =
   | ({ t: 'project.rename'; id: string; name: string } & Base)
   | ({ t: 'project.lock'; id: string; locked: boolean } & Base)
   | ({ t: 'project.delete'; id: string } & Base)
-  | ({ t: 'moment.add'; moment: Moment } & Base)
+  // `at` is the index to insert at. Omitted means append, which is what every
+  // entry written before mid-timeline insertion existed means.
+  | ({ t: 'moment.add'; moment: Moment; at?: number } & Base)
   | ({ t: 'moment.remove'; projectId: string; momentId: string } & Base)
   | ({ t: 'moment.reorder'; projectId: string; momentIds: string[] } & Base)
   | ({
@@ -126,16 +128,20 @@ export function apply(state: AppState, e: JournalEntry): AppState {
       const p = state.projects[e.moment.projectId];
       if (!p) return state;
       if (state.moments[e.moment.id]) return state;
+      // `at` is optional and absent on every entry written before insertion
+      // existed, so those replay as appends exactly as they always did. Out of
+      // range clamps rather than throwing: a collaborator's entry can name a
+      // position this device has not caught up to yet.
+      const ids = [...p.momentIds];
+      const at =
+        e.at === undefined ? ids.length : Math.max(0, Math.min(ids.length, e.at));
+      ids.splice(at, 0, e.moment.id);
       return {
         ...state,
         moments: { ...state.moments, [e.moment.id]: e.moment },
         projects: {
           ...state.projects,
-          [p.id]: {
-            ...p,
-            momentIds: [...p.momentIds, e.moment.id],
-            updatedAt: e.ts,
-          },
+          [p.id]: { ...p, momentIds: ids, updatedAt: e.ts },
         },
       };
     }

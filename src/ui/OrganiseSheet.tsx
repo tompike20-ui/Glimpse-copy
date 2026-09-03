@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { trimmedDurationMs, type Moment } from '../types';
-import { getBlob } from '../storage/db';
 import { Icon } from './Icon';
+import { Frame } from './Frame';
 import { Sheet } from './components';
 import { isNoop, organise, ORGANISE_MODES, type OrganiseMode } from './organise';
 
@@ -109,31 +109,9 @@ export function OrganiseSheet({
  * moment by.
  */
 function OrderTile({ moment }: { moment: Moment }) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let made: string | null = null;
-    let cancelled = false;
-    void getBlob(moment.blobKey).then((b) => {
-      if (!b || cancelled) return;
-      made = URL.createObjectURL(b);
-      setUrl(made);
-    });
-    return () => {
-      cancelled = true;
-      if (made) URL.revokeObjectURL(made);
-    };
-  }, [moment.blobKey]);
-
   return (
     <div className="organise-tile" aria-hidden="true">
-      {!url ? (
-        <span className="tile-ph" />
-      ) : moment.kind === 'still' ? (
-        <img src={url} alt="" />
-      ) : (
-        <video src={url} muted playsInline preload="metadata" />
-      )}
+      <Frame moment={moment} placeholder={<span className="tile-ph" />} />
     </div>
   );
 }
