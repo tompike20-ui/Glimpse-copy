@@ -3,6 +3,7 @@ import type { Moment, MusicTrack } from '../types';
 import { momentSpeed, trimmedDurationMs } from '../types';
 import { getBlob } from '../storage/db';
 import { Icon } from './Icon';
+import type { FrameSource } from '../export/snapshot';
 
 /**
  * Plays a Glimpse without exporting it.
@@ -21,20 +22,35 @@ interface Props {
   moments: Moment[];
   music?: MusicTrack | null;
   onClose: () => void;
+  /**
+   * When set, the preview doubles as a frame picker: it opens paused on the
+   * first moment and offers to save whatever is on screen. Picking a frame
+   * anywhere but here would mean guessing which one was wanted.
+   */
+  onSaveFrame?: (src: FrameSource) => void;
+  saving?: boolean;
 }
 
-export function Preview({ moments, music, onClose }: Props) {
+export function Preview({ moments, music, onClose, onSaveFrame, saving }: Props) {
+  const picking = !!onSaveFrame;
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [musicUrl, setMusicUrl] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(!onSaveFrame);
   const [elapsed, setElapsed] = useState(0);
   const [ready, setReady] = useState(false);
 
   const videoA = useRef<HTMLVideoElement>(null);
   const videoB = useRef<HTMLVideoElement>(null);
+  const stillRef = useRef<HTMLImageElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [slot, setSlot] = useState<0 | 1>(0);
+  // Where inside the current moment the scrubber sits, while picking a frame.
+  const [scrubS, setScrubS] = useState(0);
+  /* Bumped to ask for a re-seek to the current moment's start. Restart and the
+     picker's step buttons can land on the moment that is already showing, and
+     a state value that does not change cannot re-run an effect. */
+  const [seekNonce, setSeekNonce] = useState(0);
 
   // Elapsed time of all moments before the current one, so the progress bar
   // reflects the whole Glimpse rather than the clip.
@@ -95,17 +111,40 @@ export function Preview({ moments, music, onClose }: Props) {
     });
   }, [moments]);
 
-  /* Drive the active element for the current moment. */
+  /* Position the active element on the current moment's first frame, and give
+     it that moment's rate and volume. */
+  useEffect(() => {
+    if (!ready || !current || current.kind === 'still') return;
+    const el = (slot === 0 ? videoA : videoB).current;
+    if (!el) return;
+
+    el.playbackRate = momentSpeed(current);
+    el.muted = !!current.muted || (!!music && music.duckClips);
+    el.volume = music && !music.duckClips ? 1 : 0.35;
+
+    // Seeking an element that has not loaded metadata yet is silently ignored,
+    // which on a trimmed moment leaves the wrong frame on screen — and while
+    // picking a frame, the wrong frame is the one that gets saved.
+    const seekToStart = () => {
+      el.currentTime = current.trimStartMs / 1000;
+    };
+    if (el.readyState >= 1) seekToStart();
+    else el.addEventListener('loadedmetadata', seekToStart, { once: true });
+
+    return () => el.removeEventListener('loadedmetadata', seekToStart);
+    // Deliberately not keyed on `playing`: rewinding to the trim point every
+    // time playback pauses would restart the moment on every tap, and would
+    // discard the position the frame picker's scrubber was left at.
+  }, [ready, current, slot, music, seekNonce]);
+
+  /* Transport: run or hold, without moving the playhead. A still has no
+     playback of its own, so it is held for its duration on a timer. */
   useEffect(() => {
     if (!ready || !current) return;
-    if (stillTimer.current) window.clearTimeout(stillTimer.current);
 
     if (current.kind === 'still') {
       if (!playing) return;
-      stillTimer.current = window.setTimeout(
-        advance,
-        trimmedDurationMs(current),
-      );
+      stillTimer.current = window.setTimeout(advance, trimmedDurationMs(current));
       return () => {
         if (stillTimer.current) window.clearTimeout(stillTimer.current);
       };
@@ -113,14 +152,9 @@ export function Preview({ moments, music, onClose }: Props) {
 
     const el = (slot === 0 ? videoA : videoB).current;
     if (!el) return;
-
-    el.playbackRate = momentSpeed(current);
-    el.muted = !!current.muted || (!!music && music.duckClips);
-    el.volume = music && !music.duckClips ? 1 : 0.35;
-    el.currentTime = current.trimStartMs / 1000;
     if (playing) void el.play().catch(() => {});
     else el.pause();
-  }, [ready, current, slot, playing, advance, music]);
+  }, [ready, current, slot, playing, advance]);
 
   /* Preload the following moment into the idle element and park it on its
      first frame, so the swap is instant. */
@@ -170,6 +204,12 @@ export function Preview({ moments, music, onClose }: Props) {
     return () => cancelAnimationFrame(raf);
   }, [playing, current]);
 
+  /* Park the scrubber at the start of whichever moment is now showing. */
+  useEffect(() => {
+    if (!current) return;
+    setScrubS(current.trimStartMs / 1000);
+  }, [current]);
+
   /* Soundtrack runs across the whole preview, independent of the clips. */
   useEffect(() => {
     const a = audioRef.current;
@@ -185,8 +225,51 @@ export function Preview({ moments, music, onClose }: Props) {
     setIndex(0);
     setSlot(0);
     setPlaying(true);
+    setSeekNonce((n) => n + 1);
     const a = audioRef.current;
     if (a) a.currentTime = 0;
+  }
+
+  /** Jump straight to a moment and hold there, paused on its first frame. */
+  function goTo(i: number) {
+    const clamped = Math.max(0, Math.min(moments.length - 1, i));
+    priorMs.current = moments
+      .slice(0, clamped)
+      .reduce((s, m) => s + trimmedDurationMs(m), 0);
+    setElapsed(priorMs.current);
+    setPlaying(false);
+    setSlot(0);
+    setIndex(clamped);
+    setSeekNonce((n) => n + 1);
+  }
+
+  /** Whatever is currently on the stage, for the caller to draw. */
+  function stageSource(): FrameSource | null {
+    if (!current) return null;
+    if (current.kind === 'still') {
+      const img = stillRef.current;
+      return img ? { el: img, kind: 'still' } : null;
+    }
+    const el = (slot === 0 ? videoA : videoB).current;
+    return el ? { el, kind: 'video' } : null;
+  }
+
+  /* Scrub within the current moment, so the saved frame is the one wanted
+     rather than merely the one the clip happened to be paused on. */
+  const startS = current ? current.trimStartMs / 1000 : 0;
+  const endS = current
+    ? (current.trimEndMs ?? current.durationMs) / 1000
+    : 0;
+
+  function seekTo(seconds: number) {
+    const el = (slot === 0 ? videoA : videoB).current;
+    if (!el) return;
+    el.currentTime = seconds;
+    setScrubS(seconds);
+    setElapsed(
+      priorMs.current +
+        ((seconds - startS) * 1000) / (current ? momentSpeed(current) : 1),
+    );
   }
 
   const finished = !playing && index === moments.length - 1 && elapsed > 0;
@@ -209,21 +292,32 @@ export function Preview({ moments, music, onClose }: Props) {
         />
 
         {current?.kind === 'still' && urls[current.id] && (
-          <img className="preview-still" src={urls[current.id]} alt="" />
+          <img
+            ref={stillRef}
+            className="preview-still"
+            src={urls[current.id]}
+            alt=""
+          />
         )}
 
         {!ready && <div className="preview-hint">Loading…</div>}
 
+        {/* While picking a frame this moves out of the centre and shrinks: the
+            frame under it is the whole point of the screen. */}
         {(!playing || finished) && ready && (
           <button
-            className="preview-play"
+            className={`preview-play${picking ? ' corner' : ''}`}
             onClick={(e) => {
               e.stopPropagation();
               finished ? restart() : setPlaying(true);
             }}
             aria-label={finished ? 'Play again' : 'Play'}
           >
-            <Icon name={finished ? 'flip' : 'play'} size={32} strokeWidth={2} />
+            <Icon
+              name={finished ? 'flip' : 'play'}
+              size={picking ? 20 : 32}
+              strokeWidth={2}
+            />
           </button>
         )}
       </div>
@@ -242,9 +336,64 @@ export function Preview({ moments, music, onClose }: Props) {
             {(elapsed / 1000).toFixed(1)}s / {(total / 1000).toFixed(1)}s
           </span>
         </div>
-        <button className="btn tinted" onClick={onClose}>
-          Done
-        </button>
+
+        {picking ? (
+          <>
+            {current?.kind !== 'still' && endS > startS && (
+              <input
+                className="preview-scrub"
+                type="range"
+                // Whole milliseconds, one frame at a time. Seconds would put
+                // the step grid on a float, where 0.6 is not a multiple of
+                // 0.02 and the browser rejects the value.
+                min={Math.round(startS * 1000)}
+                max={Math.round(endS * 1000)}
+                step={33}
+                value={Math.round(scrubS * 1000)}
+                aria-label="Position within this moment"
+                onChange={(e) => {
+                  setPlaying(false);
+                  seekTo(Number(e.target.value) / 1000);
+                }}
+              />
+            )}
+            <div className="preview-steps">
+              <button
+                className="btn tinted"
+                onClick={() => goTo(index - 1)}
+                disabled={index === 0}
+                aria-label="Previous moment"
+              >
+                <Icon name="chevron-left" size={18} strokeWidth={2.4} />
+              </button>
+              <button
+                className="btn filled"
+                onClick={() => {
+                  const src = stageSource();
+                  if (src) onSaveFrame?.(src);
+                }}
+                disabled={!ready || saving}
+              >
+                {saving ? 'Saving…' : 'Save frame'}
+              </button>
+              <button
+                className="btn tinted"
+                onClick={() => goTo(index + 1)}
+                disabled={index >= moments.length - 1}
+                aria-label="Next moment"
+              >
+                <Icon name="chevron-right" size={18} strokeWidth={2.4} />
+              </button>
+            </div>
+            <button className="btn plain" onClick={onClose}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button className="btn tinted" onClick={onClose}>
+            Done
+          </button>
+        )}
       </div>
     </div>
   );

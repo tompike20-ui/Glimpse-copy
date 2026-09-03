@@ -160,6 +160,31 @@ await page.waitForSelector('.toolbar', { timeout: 20000 });
 await page.locator('.nav-btn[aria-label="Preview"]').click();
 await page.waitForSelector('.preview', { timeout: 20000 });
 const totalLabel = await page.locator('.preview-meta').innerText();
+
+// Pausing must hold the playhead where it is. It used to rewind to the
+// moment's trim point, so every tap restarted the clip.
+await page.waitForFunction(
+  () => {
+    const v = document.querySelector('.preview-stage video');
+    return v && !v.paused && v.currentTime > 0.15;
+  },
+  null,
+  { timeout: 20000 },
+);
+await page.locator('.preview-stage').click();
+await page.waitForTimeout(300);
+const heldAt = await page.evaluate(() => {
+  const v = [...document.querySelectorAll('.preview-stage video')].find(
+    (el) => el.style.opacity !== '0',
+  );
+  return { t: v?.currentTime ?? -1, paused: v?.paused };
+});
+if (!heldAt.paused) errors.push('tapping the stage did not pause the preview');
+if (heldAt.t < 0.1) {
+  errors.push(`pausing rewound the moment to ${heldAt.t.toFixed(2)}s`);
+}
+await page.locator('.preview-stage').click();
+
 // Wait for playback to actually reach the end rather than assuming it does.
 await page.waitForFunction(
   () => {
@@ -194,6 +219,14 @@ if (gridBefore.join() === gridAfter.join()) {
 await page.locator('.viewtoggle button', { hasText: 'List' }).click();
 await page.waitForSelector('.scroll .list .row', { timeout: 10000 });
 
+/** Export now asks what kind first, so every export goes through the sheet. */
+async function startVideoExport() {
+  await page.locator('.toolbar .btn.filled').click();
+  await page.waitForSelector('.sheet', { timeout: 10000 });
+  await page.locator('.sheet .row', { hasText: 'Video' }).click();
+  await page.waitForSelector('.sheet', { state: 'detached', timeout: 10000 });
+}
+
 await page.evaluate(() => {
   navigator.canShare = () => false;
   const orig = HTMLAnchorElement.prototype.click;
@@ -202,7 +235,7 @@ await page.evaluate(() => {
     else orig.call(this);
   };
 });
-await page.locator('.toolbar .btn.filled').click();
+await startVideoExport();
 await page.waitForFunction(() => window.__exported, null, { timeout: 600000 });
 const copyOut = await page.evaluate(async () => {
   const r = await fetch(window.__exported.href);
@@ -219,12 +252,33 @@ await page.evaluate(() => {
 });
 await page.locator('.scroll .list .row .row-main').first().click();
 await page.waitForSelector('.sheet', { timeout: 10000 });
+
+// ---- the moment sheet shows the clip it is editing ----
+// Trim used to be sliders over nothing but numbers.
+await page.waitForSelector('.clip-stage video', { timeout: 20000 });
+const trimBefore = (await page.locator('.sheet .group-footer').first().innerText()).trim();
+const trimStart = page.locator('.sheet input[type=range]').first();
+await trimStart.fill('400');
+await page.waitForTimeout(400);
+const clip = await page.evaluate(() => {
+  const v = document.querySelector('.clip-stage video');
+  return { t: v?.currentTime ?? -1, w: v?.videoWidth ?? 0 };
+});
+const trimAfter = (await page.locator('.sheet .group-footer').first().innerText()).trim();
+step('9.5', `clip preview: "${trimBefore}" → "${trimAfter}", playhead ${clip.t.toFixed(2)}s`);
+if (!clip.w) errors.push('the clip preview never decoded a frame');
+// Dragging the start handle past the playhead must pull the picture with it.
+if (clip.t < 0.39) {
+  errors.push(`clip preview playhead stayed at ${clip.t.toFixed(2)}s, outside the trim`);
+}
+if (trimBefore === trimAfter) errors.push('the trim readout did not follow the slider');
+
 await page.locator('.sheet .segmented button', { hasText: '2×' }).click();
 await page.locator('.sheet .nav-btn', { hasText: 'Done' }).click();
 await page.waitForSelector('.sheet', { state: 'detached', timeout: 10000 });
 step(10, `applied 2x speed: ${(await page.locator('.row-title').first().innerText()).trim()}`);
 
-await page.locator('.toolbar .btn.filled').click();
+await startVideoExport();
 await page.waitForFunction(() => window.__exported, null, { timeout: 600000 });
 const reOut = await page.evaluate(async () => {
   const r = await fetch(window.__exported.href);
@@ -262,7 +316,7 @@ if (durBefore === durAfter) errors.push('still duration did not change');
 await page.locator('.sheet .nav-btn', { hasText: 'Done' }).click();
 await page.waitForSelector('.sheet', { state: 'detached', timeout: 10000 });
 
-await page.locator('.toolbar .btn.filled').click();
+await startVideoExport();
 await page.waitForFunction(() => window.__exported, null, { timeout: 600000 });
 const stillOut = await page.evaluate(async () => {
   const r = await fetch(window.__exported.href);
@@ -270,6 +324,59 @@ const stillOut = await page.evaluate(async () => {
 });
 step(13, `exported with still: ${stillOut} bytes`);
 if (stillOut < 1000) errors.push('export containing a still produced an empty file');
+
+// ---- snapshot: one frame, grabbed from the paused preview ----
+// This path never touches ffmpeg. It draws the on-screen frame to a canvas,
+// so the checks that matter are that the canvas is readable (a tainted one
+// throws) and that it holds a frame rather than an undecoded blank.
+await page.evaluate(() => {
+  window.__exported = null;
+});
+await page.locator('.toolbar .btn.filled').click();
+await page.waitForSelector('.sheet', { timeout: 10000 });
+await page.locator('.sheet .row', { hasText: 'Snapshot' }).click();
+await page.waitForSelector('.preview-steps', { timeout: 20000 });
+await page.waitForFunction(
+  () => !document.querySelector('.preview-steps .btn.filled')?.disabled,
+  null,
+  { timeout: 20000 },
+);
+if (
+  await page.evaluate(() =>
+    [...document.querySelectorAll('.preview-stage video')].some((v) => !v.paused),
+  )
+) {
+  errors.push('the frame picker started playing instead of holding still');
+}
+await page.locator('.preview-steps .btn.filled').click();
+await page.waitForFunction(() => window.__exported, null, { timeout: 30000 });
+const snap = await page.evaluate(async () => {
+  const r = await fetch(window.__exported.href);
+  const blob = await r.blob();
+  const bmp = await createImageBitmap(blob);
+  const c = document.createElement('canvas');
+  c.width = bmp.width;
+  c.height = bmp.height;
+  const g = c.getContext('2d');
+  g.drawImage(bmp, 0, 0);
+  const d = g.getImageData(0, Math.floor(bmp.height / 2), bmp.width, 1).data;
+  let lit = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 30) lit++;
+  return {
+    name: window.__exported.name,
+    type: blob.type,
+    size: blob.size,
+    w: bmp.width,
+    h: bmp.height,
+    lit: lit / (d.length / 4),
+  };
+});
+step(14, `snapshot: ${snap.name} ${snap.w}×${snap.h} ${snap.size} bytes`);
+if (snap.type !== 'image/jpeg') errors.push(`snapshot was ${snap.type}, not a jpeg`);
+if (snap.w !== 1080 || snap.h !== 1080) {
+  errors.push(`snapshot was ${snap.w}×${snap.h}, expected 1080×1080 for a square Glimpse`);
+}
+if (snap.lit < 0.5) errors.push('snapshot came out blank');
 
 console.log(`\n=== ERRORS (${errors.length}) ===`);
 errors.forEach((e) => console.log(e));

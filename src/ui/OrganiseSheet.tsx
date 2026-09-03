@@ -74,11 +74,11 @@ export function OrganiseSheet({
           {ORGANISE_MODES.map((opt) => (
             <button
               key={opt.mode}
-              className="row organise-row"
+              className="row icon-row"
               aria-pressed={mode === opt.mode}
               onClick={() => pick(opt.mode)}
             >
-              <span className={`organise-icon${mode === opt.mode ? ' on' : ''}`}>
+              <span className={`row-icon${mode === opt.mode ? ' on' : ''}`}>
                 <Icon name={opt.icon} size={21} />
               </span>
               <span className="row-main">
@@ -86,7 +86,7 @@ export function OrganiseSheet({
                 <span className="row-sub">{opt.sub}</span>
               </span>
               {mode === opt.mode && (
-                <span className="organise-check">
+                <span className="row-check">
                   <Icon name="check" size={20} strokeWidth={2.6} />
                 </span>
               )}

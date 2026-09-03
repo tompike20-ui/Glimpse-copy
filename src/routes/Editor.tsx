@@ -9,6 +9,12 @@ import {
   type ExportProgress,
 } from '../export/exporter';
 import { planExport } from '../export/concat';
+import {
+  grabFrame,
+  shareImage,
+  snapshotFileName,
+  type FrameSource,
+} from '../export/snapshot';
 import { useCloud } from '../cloud/useCloud';
 import { createInvite, ensureBlob, subscribeToProject } from '../cloud/sync';
 import {
@@ -25,6 +31,7 @@ import { Icon } from '../ui/Icon';
 import { Toast } from '../ui/Toast';
 import { Preview } from '../ui/Preview';
 import { OrganiseSheet } from '../ui/OrganiseSheet';
+import { ClipPreview } from '../ui/ClipPreview';
 
 const REENCODE_TEXT: Record<string, string> = {
   trimmed: 'Re-encoding trimmed moments…',
@@ -198,6 +205,10 @@ export default function Editor() {
   const [previewing, setPreviewing] = useState(false);
   const [undo, setUndo] = useState<{ momentId: string } | null>(null);
   const [organising, setOrganising] = useState(false);
+  const [exportChoice, setExportChoice] = useState(false);
+  // True while the preview is doubling as a frame picker.
+  const [picking, setPicking] = useState(false);
+  const [savingFrame, setSavingFrame] = useState(false);
   // The order Organise replaced, kept only long enough to offer it back.
   const [orderUndo, setOrderUndo] = useState<string[] | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -252,6 +263,21 @@ export default function Editor() {
   const trashCount = trashed.length;
 
   if (!project) return null;
+
+  async function saveFrame(src: FrameSource) {
+    setExportErr(null);
+    setSavingFrame(true);
+    try {
+      const blob = await grabFrame(src, project!);
+      const ok = await shareImage(blob, snapshotFileName(project!.name));
+      setPicking(false);
+      setToast(ok ? 'Shared' : 'Snapshot ready');
+    } catch (err) {
+      setExportErr((err as Error).message);
+    } finally {
+      setSavingFrame(false);
+    }
+  }
 
   async function runExport() {
     setExportErr(null);
@@ -516,7 +542,7 @@ export default function Editor() {
         )}
         <button
           className="btn filled"
-          onClick={runExport}
+          onClick={() => setExportChoice(true)}
           disabled={!!progress || moments.length === 0}
         >
           {progress ? (
@@ -563,6 +589,67 @@ export default function Editor() {
           music={project.music}
           onClose={() => setPreviewing(false)}
         />
+      )}
+
+      {/* The same player, used to choose which frame to keep. */}
+      {picking && (
+        <Preview
+          moments={moments}
+          music={null}
+          onClose={() => setPicking(false)}
+          onSaveFrame={saveFrame}
+          saving={savingFrame}
+        />
+      )}
+
+      {exportChoice && (
+        <Sheet title="Export" onClose={() => setExportChoice(false)}>
+          <div className="group">
+            <div className="list">
+              <button
+                className="row icon-row"
+                onClick={() => {
+                  setExportChoice(false);
+                  void runExport();
+                }}
+              >
+                <span className="row-icon on">
+                  <Icon name="film" size={21} />
+                </span>
+                <span className="row-main">
+                  <span className="row-title">Video</span>
+                  <span className="row-sub">
+                    The whole Glimpse — {moments.length} moment
+                    {moments.length === 1 ? '' : 's'},{' '}
+                    {(totalMs / 1000).toFixed(1)}s
+                    {plan.canStreamCopy ? ' · instant' : ' · needs re-encoding'}
+                  </span>
+                </span>
+              </button>
+              <button
+                className="row icon-row"
+                onClick={() => {
+                  setExportChoice(false);
+                  setPicking(true);
+                }}
+              >
+                <span className="row-icon on">
+                  <Icon name="photo" size={21} />
+                </span>
+                <span className="row-main">
+                  <span className="row-title">Snapshot</span>
+                  <span className="row-sub">
+                    A single frame as a photo — pick it on the next screen
+                  </span>
+                </span>
+              </button>
+            </div>
+            <div className="group-footer">
+              Both open the share sheet, where Save Video and Save Image put the
+              result in Photos.
+            </div>
+          </div>
+        </Sheet>
       )}
 
       {organising && (
@@ -623,6 +710,8 @@ export default function Editor() {
             </button>
           }
         >
+          <ClipPreview moment={editingMoment} />
+
           {editingMoment.kind === 'still' ? (
             <div className="group">
               <div className="group-header">On screen for</div>

@@ -1195,6 +1195,17 @@ svg {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
 }
 
+/* Out of the way while a frame is being chosen: the frame is what matters. */
+.preview-play.corner {
+  width: 44px;
+  height: 44px;
+  left: 16px;
+  bottom: 16px;
+  padding-left: 2px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
 .preview-hint {
   position: absolute;
   color: rgba(255, 255, 255, 0.6);
@@ -1220,6 +1231,43 @@ svg {
   display: block;
   height: 100%;
   background: var(--brand);
+}
+
+/* Frame picker: a scrubber inside the current moment, then step/save/step.
+   The bar sits on black, so these override the light-surface button colours. */
+.preview-scrub {
+  width: 100%;
+  margin: 0 0 14px;
+  accent-color: var(--brand);
+}
+
+.preview-steps {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+
+.preview-steps .btn {
+  width: auto;
+}
+
+/* Save is the wide one; the two steppers stay square beside it. */
+.preview-steps .btn.filled {
+  flex: 1;
+}
+
+.preview-steps .btn.tinted {
+  flex: none;
+  padding: 15px 16px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  display: grid;
+  place-items: center;
+}
+
+.preview-bar .btn.plain {
+  color: rgba(235, 235, 245, 0.6);
 }
 
 .preview-meta {
@@ -1381,6 +1429,49 @@ svg {
   background: var(--fill);
 }
 
+/* ---------------------------------------------------------- clip preview */
+
+.clip-preview {
+  padding: 0 var(--gutter) 20px;
+}
+
+.clip-stage {
+  position: relative;
+  width: 100%;
+  /* Capped rather than aspect-locked: the sheet also has to fit the controls
+     the preview exists to explain. */
+  max-height: 34vh;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+  display: grid;
+  place-items: center;
+}
+
+.clip-stage img,
+.clip-stage video {
+  width: 100%;
+  height: 100%;
+  /* Contain, so trimming never shows a differently cropped frame than the
+     export will. */
+  object-fit: contain;
+  display: block;
+}
+
+.clip-play {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: #000;
+  display: grid;
+  place-items: center;
+  padding-left: 3px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
 /* ------------------------------------------------------------- organise */
 
 .organise-preview {
@@ -1416,30 +1507,31 @@ svg {
   padding-top: 8px;
 }
 
-.organise-row {
+/* A list row that leads with an icon rather than a thumbnail. */
+.icon-row {
   width: 100%;
   text-align: left;
   background: none;
 }
 
-/* Aligned to the label, not to a thumbnail: these rows lead with a 21px icon,
-   so the list's usual 72px inset would float the separator into open space. */
-.organise-row + .organise-row::before {
+/* Aligned to the label: the list's usual 72px inset assumes a thumbnail and
+   would float the separator into open space beside a 21px icon. */
+.icon-row + .icon-row::before {
   left: 49px;
 }
 
-.organise-icon {
+.row-icon {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
   color: var(--label-2);
 }
 
-.organise-icon.on {
+.row-icon.on {
   color: var(--brand-ink);
 }
 
-.organise-check {
+.row-check {
   flex: 0 0 auto;
   color: var(--brand-ink);
   display: grid;
