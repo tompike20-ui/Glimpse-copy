@@ -1,0 +1,41 @@
+{
+  "pages": [
+    { "id": "page-1", "name": "Overhaul" },
+    { "id": "page-2", "name": "Alternate direction" }
+  ],
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 390, "h": 844, "title": "Glimpses", "page": "page-1" },
+    { "file": "Editor.dc.html", "x": 490, "y": 0, "w": 390, "h": 844, "title": "Editor", "page": "page-1" },
+    { "file": "Capture.dc.html", "x": 980, "y": 0, "w": 390, "h": 844, "title": "Capture", "page": "page-1" },
+    { "file": "ClipPreview.dc.html", "x": 1470, "y": 0, "w": 390, "h": 844, "title": "Clip preview", "page": "page-1" },
+    { "file": "ExportMenu.dc.html", "x": 0, "y": 1000, "w": 390, "h": 844, "title": "Export — video or still", "page": "page-1" },
+    { "file": "Organise.dc.html", "x": 490, "y": 1000, "w": 390, "h": 844, "title": "Organise", "page": "page-1" },
+    { "file": "GlimpsesLight.dc.html", "x": 980, "y": 1000, "w": 390, "h": 844, "title": "Glimpses — light", "page": "page-1" },
+    { "file": "GlimpsesAlt.dc.html", "x": 0, "y": 0, "w": 390, "h": 844, "title": "Glimpses — filmstrip index", "page": "page-2" }
+  ],
+  "annotations": [
+    {
+      "id": "direction",
+      "x": 0,
+      "y": -190,
+      "w": 880,
+      "text": "Direction: the footage leads.\n\nThe app currently reads as a settings list that happens to hold video — 52px thumbnails in grouped rows. Here the moments are the interface: poster cards on the list, a filmstrip in the editor, preview as the hero rather than a nav-bar button.\n\nBrand is unchanged: amber #E08700 (#FFB020 dark), the 160° amber-to-ember gradient, burnt orange #C2410C for interactive text in light mode. Capture stays black and unbranded — a viewfinder covered in brand colour is a worse viewfinder."
+    },
+    {
+      "id": "new-surfaces",
+      "x": 0,
+      "y": 1900,
+      "w": 880,
+      "text": "New surfaces on this row.\n\nExport becomes a sheet with two choices rather than one button: the whole Glimpse as video, or the frame under the playhead as a JPEG still. The still option shows which frame it will save.\n\nOrganise previews the resulting order before you commit, because shuffling 38 moments you cannot see is a leap of faith. Shuffle reshuffles on each tap."
+    },
+    {
+      "id": "alt-note",
+      "x": 0,
+      "y": -190,
+      "w": 390,
+      "page": "page-2",
+      "text": "Alternate axis: instead of one cover frame per Glimpse, show the actual strip of moments, so the shape of the whole video is legible from the list.\n\nTradeoff: far more scannable for long Glimpses, but it loses the poster quality that makes a Glimpse feel like a finished piece, and three per screen instead of four."
+    }
+  ],
+  "launch": { "view": "canvas", "page": "page-1" }
+}

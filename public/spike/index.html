@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Glimpse Spike — iOS diagnostics</title>
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%23111'/%3E%3Ccircle cx='90' cy='90' r='46' fill='%23e5484d'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0b0b0c; --panel: #161618; --line: #2a2a2e;
+    --fg: #f2f2f3; --dim: #9b9ba1;
+    --pass: #30a46c; --warn: #f5a524; --fail: #e5484d; --info: #5b8def;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 20px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin: 0 0 10px; font-weight: 600; }
+  .row { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .row:last-child { border-bottom: 0; }
+  .row .k { flex: 0 0 42%; color: var(--dim); font-size: 13px; }
+  .row .v { flex: 1; font-variant-numeric: tabular-nums; word-break: break-word; font-size: 13px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .pass { background: var(--pass); } .warn { background: var(--warn); }
+  .fail { background: var(--fail); } .info { background: var(--info); }
+  button {
+    width: 100%; padding: 14px; font-size: 16px; font-weight: 600;
+    background: var(--info); color: #fff; border: 0; border-radius: 11px;
+    margin-top: 8px; font-family: inherit;
+  }
+  button:disabled { opacity: 0.4; }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--fg); }
+  video { width: 100%; border-radius: 10px; background: #000; margin-top: 10px; aspect-ratio: 16/9; object-fit: cover; }
+  .meter { height: 8px; background: #000; border-radius: 4px; overflow: hidden; margin-top: 10px; }
+  .meter i { display: block; height: 100%; width: 0%; background: var(--pass); transition: width 0.06s linear; }
+  pre { background: #000; border-radius: 10px; padding: 12px; overflow-x: auto; font-size: 11px; color: var(--dim); margin: 10px 0 0; max-height: 240px; }
+  .status { font-size: 13px; color: var(--dim); margin-top: 10px; min-height: 1.5em; }
+  .big { font-size: 15px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>Glimpse Spike</h1>
+<div class="sub">Phase 0 diagnostics. Run every test, then tap <b>Copy results</b> and paste them back.</div>
+
+<section>
+  <h2>1 · Environment</h2>
+  <div id="env"></div>
+</section>
+
+<section>
+  <h2>2 · Storage</h2>
+  <div id="storage"></div>
+  <button id="btnPersist" class="ghost">Request persistent storage</button>
+</section>
+
+<section>
+  <h2>3 · Recording formats</h2>
+  <div id="codecs"></div>
+</section>
+
+<section>
+  <h2>4 · Consecutive-clip audio <span style="color:var(--fail)">★</span></h2>
+  <div class="sub" style="margin:0 0 10px">Records 5 one-second clips back-to-back on a single stream. This is the original app's headline bug — every clip must have audio. <b>Make noise while it runs.</b></div>
+  <video id="preview" playsinline muted></video>
+  <div class="meter"><i id="meterBar"></i></div>
+  <button id="btnRecord">Start camera &amp; record 5 clips</button>
+  <div class="status" id="recStatus"></div>
+  <div id="clips"></div>
+</section>
+
+<section>
+  <h2>5 · Export concat (-c copy)</h2>
+  <div class="sub" style="margin:0 0 10px">Stitches the clips from test 4 without re-encoding. Also probes each clip's real audio/video streams.</div>
+  <button id="btnConcat" disabled>Load ffmpeg &amp; concatenate</button>
+  <div class="status" id="ffStatus"></div>
+  <div id="ffResults"></div>
+  <video id="output" playsinline controls style="display:none"></video>
+</section>
+
+<section>
+  <h2>6 · Interruptions</h2>
+  <div class="sub" style="margin:0 0 10px">Passive log. Background the app, lock the screen, or take a call after recording, then come back.</div>
+  <div id="events"><div class="row"><div class="v" style="color:var(--dim)">No events yet.</div></div></div>
+</section>
+
+<button id="btnCopy">Copy results</button>
+<div class="status" id="copyStatus"></div>
+
+<!-- Vendored, not CDN: the real app must be able to export offline, so it will
+     have to ship these anyway. ~31 MB, dominated by ffmpeg-core.wasm. -->
+<script src="../vendor/ffmpeg.js"></script>
+<script src="../vendor/ffmpeg-util.js"></script>
+<script src="./spike.js"></script>
+</body>
+</html>

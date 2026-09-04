@@ -1,0 +1,2028 @@
+/*
+ * iOS design system.
+ *
+ * Colours, type scale and metrics follow Apple's Human Interface Guidelines
+ * rather than being invented, so the app reads as native rather than as a web
+ * page wearing a costume. Browsing and editing follow the system appearance;
+ * capture is always dark, the way Camera is.
+ */
+
+:root {
+  /* Brand. Amber reads warm and filmic, and stays clear of the red that
+     record and destructive actions own. Interactive text stays iOS blue,
+     which is both familiar and contrast-safe on either background. */
+  --brand: #e08700;
+  --brand-soft: rgba(224, 135, 0, 0.14);
+  /* Amber on white is about 2.9:1 — well under the 4.5:1 text minimum. Fills
+     and icons use --brand; anything that has to be read uses --brand-ink,
+     a burnt orange measuring 5.2:1 on white and 4.6:1 on the grouped
+     background. A darker yellow passes too but reads muddy brown. */
+  --brand-ink: #c2410c;
+  --grad: linear-gradient(160deg, #f0a01c, #d24b16);
+
+  /* System colours — light */
+  --red: #ff3b30;
+  --green: #34c759;
+  --orange: #ff9500;
+
+  --label: #000000;
+  --label-2: rgba(60, 60, 67, 0.6);
+  --label-3: rgba(60, 60, 67, 0.3);
+  --separator: rgba(60, 60, 67, 0.29);
+  --fill: rgba(120, 120, 128, 0.12);
+  --fill-2: rgba(120, 120, 128, 0.16);
+
+  --bg: #f2f2f7;
+  --bg-elevated: #ffffff;
+  --bg-tertiary: #f2f2f7;
+  --nav-blur: rgba(249, 249, 249, 0.82);
+
+  /* Metrics */
+  --row-h: 44px;
+  --gutter: 16px;
+  --radius: 14px;
+  --radius-lg: 14px;
+  --safe-t: env(safe-area-inset-top);
+  --safe-b: env(safe-area-inset-bottom);
+
+  /* Apple's standard easing for interactive transitions */
+  --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand: #ffb020;
+    --brand-soft: rgba(255, 176, 32, 0.18);
+    --brand-ink: #ffb020;
+
+    --red: #ff453a;
+    --green: #30d158;
+    --orange: #ff9f0a;
+
+    --label: #ffffff;
+    --label-2: rgba(235, 235, 245, 0.6);
+    --label-3: rgba(235, 235, 245, 0.3);
+    --separator: rgba(84, 84, 88, 0.65);
+    --fill: rgba(120, 120, 128, 0.24);
+    --fill-2: rgba(120, 120, 128, 0.32);
+
+    --bg: #000000;
+    --bg-elevated: #1c1c1e;
+    --bg-tertiary: #2c2c2e;
+    --nav-blur: rgba(30, 30, 30, 0.75);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--label);
+  font:
+    17px/1.29 -apple-system,
+    BlinkMacSystemFont,
+    'SF Pro Text',
+    system-ui,
+    sans-serif;
+  letter-spacing: -0.022em;
+  overscroll-behavior-y: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- layout */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+}
+
+.screen.dark {
+  background: #000;
+  color: #fff;
+  /* Capture is dark regardless of system appearance, like Camera. */
+  --label: #fff;
+  --label-2: rgba(235, 235, 245, 0.6);
+  --separator: rgba(84, 84, 88, 0.65);
+}
+
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--safe-b) + 24px);
+}
+
+/* ------------------------------------------------------------- nav bars */
+
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding-top: var(--safe-t);
+  background: var(--nav-blur);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  transition: box-shadow 0.2s var(--ease);
+}
+
+.nav.scrolled {
+  box-shadow: 0 0.5px 0 var(--separator);
+}
+
+.nav-inline {
+  display: flex;
+  align-items: center;
+  height: var(--row-h);
+  padding: 0 var(--gutter);
+  gap: 8px;
+}
+
+.nav-title {
+  flex: 1;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+}
+
+.nav.scrolled .nav-title {
+  opacity: 1;
+}
+
+.nav-large {
+  padding: 0 var(--gutter) 10px;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 41px;
+  transition:
+    opacity 0.2s var(--ease),
+    transform 0.2s var(--ease);
+  transform-origin: left bottom;
+}
+
+.nav-sub {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--label-2);
+  margin-top: 2px;
+}
+
+.nav.scrolled .nav-large {
+  opacity: 0;
+  transform: scale(0.9);
+  height: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+
+/* Nav buttons are 17px regular blue, and the back one carries a chevron. */
+.nav-btn {
+  color: var(--brand-ink);
+  font-size: 17px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.nav-btn.right {
+  justify-content: flex-end;
+}
+
+.nav-btn:disabled {
+  color: var(--label-3);
+}
+
+.nav-btn .chev {
+  font-size: 22px;
+  line-height: 1;
+  margin-left: -6px;
+  font-weight: 300;
+}
+
+/* --------------------------------------------------------- grouped lists */
+
+.group {
+  margin: 0 var(--gutter) 24px;
+}
+
+.group-header {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--label);
+  letter-spacing: -0.01em;
+  padding: 0 2px 10px;
+}
+
+/* Dynamic summary text, which must not be uppercased the way a section
+   heading is — "2.9S · INSTANT EXPORT" reads as shouting. */
+.summary {
+  font-size: 13px;
+  color: var(--label-2);
+  padding: 4px var(--gutter) 0;
+}
+
+.group-footer {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--label-2);
+  padding: 7px var(--gutter) 0;
+}
+
+.list {
+  background: var(--bg-elevated);
+  border-radius: var(--radius);
+  overflow: hidden;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--row-h);
+  padding: 11px var(--gutter);
+  text-align: left;
+  background: var(--bg-elevated);
+  position: relative;
+}
+
+/* Separators inset to align with the row's text, as in system lists. */
+.row + .row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--gutter);
+  right: 0;
+  height: 0.5px;
+  background: var(--separator);
+}
+
+.row.inset-sep + .row::before,
+.row + .row.inset-sep::before {
+  left: 72px;
+}
+
+.row:active {
+  background: var(--fill);
+}
+
+.row-title {
+  font-size: 17px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-sub {
+  font-size: 13px;
+  color: var(--label-2);
+  margin-top: 2px;
+}
+
+/* A column, not a bare block, so the title and subtitle stack even when the
+   row is built from inline elements rather than divs. */
+.row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  /* Stretch, not flex-start: the title needs the full column width for its
+     ellipsis to have something to truncate against. */
+  align-items: stretch;
+  text-align: left;
+}
+
+.row-value {
+  color: var(--label-2);
+  font-size: 17px;
+}
+
+.chevron {
+  color: var(--label-3);
+  font-size: 17px;
+  font-weight: 600;
+  flex: none;
+}
+
+.row.destructive .row-title {
+  color: var(--red);
+}
+
+.row.tinted .row-title {
+  color: var(--brand-ink);
+}
+
+/* ---------------------------------------------------------- swipe to delete */
+
+/* Row-coloured, not red: a red wrapper bleeds past the list's rounded corners
+   on the first and last rows. The red belongs to the action alone. */
+.swipe {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+
+.swipe-content {
+  position: relative;
+  transition: transform 0.25s var(--ease);
+  will-change: transform;
+}
+
+.swipe-content.dragging {
+  transition: none;
+}
+
+.swipe-action {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 15px;
+  background: var(--red);
+}
+
+/* ------------------------------------------------------------- thumbnails */
+
+.thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--fill);
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+}
+
+.thumb.lg {
+  width: 60px;
+  height: 60px;
+}
+
+/* -------------------------------------------------------------- controls */
+
+.segmented {
+  display: flex;
+  background: var(--fill);
+  border-radius: 9px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.segmented button {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--label);
+  transition: background 0.2s var(--ease);
+  white-space: nowrap;
+}
+
+.segmented button[aria-pressed='true'] {
+  background: var(--bg-elevated);
+  font-weight: 600;
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.12),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.screen.dark .segmented button[aria-pressed='true'] {
+  background: #636366;
+}
+
+.switch {
+  width: 51px;
+  height: 31px;
+  border-radius: 16px;
+  background: var(--fill-2);
+  position: relative;
+  flex: none;
+  transition: background 0.25s var(--ease);
+}
+
+.switch[aria-checked='true'] {
+  background: var(--green);
+}
+
+.switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+  transition: transform 0.25s var(--ease);
+}
+
+.switch[aria-checked='true'] i {
+  transform: translateX(20px);
+}
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 28px;
+  background: transparent;
+  flex: 1;
+  min-width: 0;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fill-2);
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.15),
+    0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  margin-top: -12px;
+}
+
+/* --------------------------------------------------------------- buttons */
+
+.btn {
+  display: block;
+  width: 100%;
+  padding: 15px;
+  border-radius: 12px;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.btn.filled {
+  background: var(--grad);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(210, 75, 22, 0.26);
+}
+
+.btn.filled.red {
+  background: var(--red);
+}
+
+.btn.tinted {
+  background: var(--fill);
+  color: var(--brand-ink);
+}
+
+.btn.plain {
+  color: var(--brand-ink);
+  font-weight: 400;
+}
+
+.btn.plain.destructive {
+  color: var(--red);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+}
+
+.btn:active:not(:disabled) {
+  opacity: 0.7;
+}
+
+/* ---------------------------------------------------------------- sheets */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  animation: fade 0.25s var(--ease);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.sheet {
+  width: 100%;
+  max-height: 92vh;
+  background: var(--bg);
+  border-radius: 12px 12px 0 0;
+  padding-bottom: calc(var(--safe-b) + 12px);
+  display: flex;
+  flex-direction: column;
+  animation: rise 0.35s var(--ease);
+  overflow: hidden;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+.grabber {
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--label-3);
+  margin: 6px auto 0;
+  flex: none;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  padding: 12px var(--gutter);
+  gap: 8px;
+  flex: none;
+}
+
+.sheet-head h2 {
+  flex: 1;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.sheet-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 12px;
+}
+
+.field {
+  width: 100%;
+  padding: 11px var(--gutter);
+  background: var(--bg-elevated);
+  border: 0;
+  border-radius: var(--radius);
+  color: var(--label);
+  font: inherit;
+  letter-spacing: inherit;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.field:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+/* ---------------------------------------------------------------- capture */
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #000;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  /* Lets the shape guide size itself against the stage in both axes at once,
+     which is the only way to fit a ratio inside a box in pure CSS. */
+  container-type: size;
+}
+
+/* Preview and shape guide share one grid cell so they stack without absolute
+   positioning. Positioning the guide with inset:0 would over-constrain the box
+   and make the browser ignore its aspect-ratio, stretching it to the stage. */
+.stage > video {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Fit the ratio inside the stage: as wide as possible, but never taller than
+   the stage. --r is the aspect ratio, set per project. */
+.frame-guide {
+  grid-area: 1 / 1;
+  width: min(100cqw, calc(100cqh * var(--r)));
+  aspect-ratio: var(--r);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.capture-bar {
+  flex: none;
+  background: #000;
+  padding: 12px 0 calc(var(--safe-b) + 12px);
+}
+
+/* Length picker, modelled on Camera's mode selector. */
+.modes {
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+  padding: 6px 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.5);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.modes::-webkit-scrollbar {
+  display: none;
+}
+
+.modes button {
+  color: inherit;
+  padding: 4px 2px;
+  white-space: nowrap;
+  transition: color 0.2s var(--ease);
+}
+
+.modes button[aria-pressed='true'] {
+  color: var(--orange);
+}
+
+.shutter-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 28px;
+}
+
+.shutter {
+  width: 74px;
+  height: 74px;
+  border-radius: 50%;
+  border: 3.5px solid #fff;
+  display: grid;
+  place-items: center;
+  position: relative;
+  justify-self: center;
+}
+
+.shutter i {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--red);
+  transition:
+    transform 0.2s var(--ease),
+    border-radius 0.2s var(--ease);
+}
+
+.shutter[data-recording='true'] i {
+  border-radius: 8px;
+  transform: scale(0.5);
+}
+
+.shutter:disabled {
+  opacity: 0.35;
+}
+
+.shutter svg {
+  position: absolute;
+  inset: -3.5px;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+
+.round-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  display: grid;
+  place-items: center;
+  font-size: 19px;
+  color: #fff;
+}
+
+.round-btn.right {
+  justify-self: end;
+}
+
+.meter {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+  margin: 0 28px 12px;
+}
+
+.meter i {
+  display: block;
+  height: 100%;
+  background: var(--green);
+  width: 0;
+  transition: width 0.05s linear;
+}
+
+.meter[data-silent='true'] i {
+  background: var(--red);
+}
+
+/* Floating status pills over the camera, as iOS does for warnings. */
+.pill {
+  position: absolute;
+  top: calc(var(--safe-t) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.65);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: #fff;
+  z-index: 3;
+}
+
+.pill.warn {
+  background: rgba(255, 159, 10, 0.92);
+  color: #000;
+}
+
+.pill.bad {
+  background: rgba(255, 69, 58, 0.94);
+}
+
+/* -------------------------------------------------------------- review */
+
+.review {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+  animation: fade 0.2s var(--ease);
+}
+
+.review video {
+  flex: 1;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.review-actions {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px calc(var(--safe-b) + 16px);
+}
+
+.review-actions .btn {
+  flex: 1;
+}
+
+/* --------------------------------------------------------------- banners */
+
+.banner {
+  margin: 0 var(--gutter) 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.banner.warn {
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  color: var(--orange);
+}
+
+.banner.bad {
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+  color: var(--red);
+}
+
+/* ---------------------------------------------------------------- misc */
+
+.empty {
+  text-align: center;
+  padding: 64px 32px;
+  color: var(--label-2);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.empty strong {
+  display: block;
+  color: var(--label);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+
+/* The app mark from the welcome screen, reused wherever the app has nothing
+   to show yet. */
+.mark {
+  width: 66px;
+  height: 66px;
+  border-radius: 17px;
+  background: var(--grad);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  margin: 0 auto 22px;
+  box-shadow: 0 10px 26px rgba(210, 75, 22, 0.24);
+}
+
+.toolbar {
+  flex: none;
+  display: flex;
+  gap: 10px;
+  padding: 10px var(--gutter) calc(var(--safe-b) + 10px);
+  background: var(--nav-blur);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 -0.5px 0 var(--separator);
+}
+
+.toolbar .btn {
+  flex: 1;
+}
+
+.progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fill-2);
+  overflow: hidden;
+  margin: 8px var(--gutter);
+}
+
+.progress i {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+  transition: width 0.3s var(--ease);
+}
+
+.grip {
+  width: 32px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  color: var(--label-3);
+  font-size: 17px;
+  flex: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.row.lifted {
+  background: var(--bg-tertiary);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  z-index: 2;
+  border-radius: var(--radius);
+}
+
+.flag {
+  color: var(--red);
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------- polish */
+
+/* Respecting the accessibility setting is not optional for a shippable app:
+   motion sickness is a real condition and iOS exposes the preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+svg {
+  display: block;
+  flex: none;
+}
+
+.nav-btn svg {
+  margin: 0 -2px;
+}
+
+/* Tactile press feedback. Without it, taps feel like clicking a web page. */
+.btn,
+.chip,
+.round-btn,
+.segmented button {
+  transition:
+    transform 0.12s var(--ease),
+    opacity 0.12s var(--ease),
+    background 0.2s var(--ease);
+}
+
+.btn:active:not(:disabled),
+.round-btn:active,
+.chip:active {
+  transform: scale(0.97);
+}
+
+.row:active {
+  background: var(--fill);
+}
+
+/* ------------------------------------------------------------ onboarding */
+
+.onboard {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--safe-t) + 48px) 28px calc(var(--safe-b) + 24px);
+  animation: fade 0.4s var(--ease);
+}
+
+.onboard-mark {
+  width: 84px;
+  height: 84px;
+  border-radius: 21px;
+  background: var(--grad);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  margin-bottom: 28px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+
+.onboard h1 {
+  font-size: 32px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+
+.onboard .lede {
+  font-size: 17px;
+  color: var(--label-2);
+  margin: 0 0 40px;
+  line-height: 1.4;
+}
+
+.onboard-points {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.onboard-point {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.onboard-point .ico {
+  width: 30px;
+  color: var(--brand);
+  padding-top: 1px;
+}
+
+.onboard-point h2 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 3px;
+}
+
+.onboard-point p {
+  font-size: 15px;
+  color: var(--label-2);
+  margin: 0;
+  line-height: 1.35;
+}
+
+/* ------------------------------------------------------------- empty art */
+
+.empty-art {
+  width: 132px;
+  height: 96px;
+  margin: 0 auto 22px;
+  color: var(--label-3);
+}
+
+/* ---------------------------------------------------------------- toast */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 88px);
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: rgba(28, 28, 30, 0.94);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  animation: toast-in 0.35s var(--ease);
+  max-width: calc(100% - 32px);
+}
+
+.toast .tick {
+  color: var(--green);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+}
+
+/* ------------------------------------------------------------ brand bits */
+
+.brand-mark {
+  color: var(--brand);
+}
+
+.mode-active {
+  color: var(--brand) !important;
+}
+
+.progress i {
+  background: var(--brand);
+}
+
+/* Buttons that pair an icon with a label need to centre both together. */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.inline-lock {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 5px;
+  color: var(--label-2);
+}
+
+.chevron svg {
+  display: block;
+}
+
+.toolbar .btn.tinted svg {
+  color: var(--brand-ink);
+}
+
+/* The welcome screen set the language the rest of the app now follows. */
+.onboard-mark {
+  background: var(--grad);
+}
+
+/* Three icon+label buttons overflow a 390pt toolbar at body size. Tighten
+   them and let the primary action take slightly more room. */
+.toolbar .btn {
+  font-size: 15px;
+  padding: 13px 8px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.toolbar .btn.filled {
+  flex: 1.15;
+}
+
+.toolbar .btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* --------------------------------------------------------------- preview */
+
+.preview {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  animation: fade 0.25s var(--ease);
+}
+
+.preview-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* Both buffers occupy the same cell; only the active one is opaque, so the
+   swap between moments has no black frame. */
+.preview-stage video,
+.preview-still {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.preview-still {
+  z-index: 2;
+}
+
+.preview-play {
+  position: absolute;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: #000;
+  display: grid;
+  place-items: center;
+  z-index: 3;
+  padding-left: 4px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+}
+
+/* Out of the way while a frame is being chosen: the frame is what matters. */
+.preview-play.corner {
+  width: 44px;
+  height: 44px;
+  left: 16px;
+  bottom: 16px;
+  padding-left: 2px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.preview-hint {
+  position: absolute;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 15px;
+  z-index: 3;
+}
+
+.preview-bar {
+  flex: none;
+  padding: 16px var(--gutter) calc(var(--safe-b) + 16px);
+  background: #000;
+  color: #fff;
+}
+
+.preview-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.preview-track i {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+}
+
+/* Frame picker: a scrubber inside the current moment, then step/save/step.
+   The bar sits on black, so these override the light-surface button colours. */
+.preview-scrub {
+  width: 100%;
+  margin: 0 0 14px;
+  accent-color: var(--brand);
+}
+
+.preview-steps {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  margin-bottom: 8px;
+}
+
+.preview-steps .btn {
+  width: auto;
+}
+
+/* Save is the wide one; the two steppers stay square beside it. */
+.preview-steps .btn.filled {
+  flex: 1;
+}
+
+.preview-steps .btn.tinted {
+  flex: none;
+  padding: 15px 16px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  display: grid;
+  place-items: center;
+}
+
+.preview-bar .btn.plain {
+  color: rgba(235, 235, 245, 0.6);
+}
+
+.preview-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.6);
+  margin: 10px 0 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview .btn.tinted {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+/* ------------------------------------------------------------ grid view */
+
+/* The dragged tile must not intercept the hit-test, or elementFromPoint
+   returns the thing being dragged instead of what is underneath it. */
+.dragging-item {
+  pointer-events: none;
+}
+
+.listbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px var(--gutter) 10px;
+}
+
+/* A text action, so it reads as secondary to the segmented control it sits
+   beside rather than competing with it. */
+.linkbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--brand-ink);
+  font-size: 15px;
+  font-weight: 500;
+  /* Tappable to 44pt without the label looking padded. */
+  padding: 12px 2px;
+  margin: -12px 0;
+}
+
+.toast-msg {
+  flex: 1;
+}
+
+.toast-action {
+  color: var(--brand);
+  font-weight: 600;
+  padding: 0 2px 0 10px;
+  white-space: nowrap;
+}
+
+.tile-ph {
+  width: 100%;
+  height: 100%;
+  background: var(--fill);
+}
+
+/* ------------------------------------------------- editor stage and strip */
+
+/* Deliberately NOT `.stage` — that name already belongs to the capture
+   viewfinder, which is a flex-filling size container. Reusing it here gave the
+   editor a hero that had a box but zero height, clipped its own contents and
+   took no space in flow: invisible on screen while every selector still
+   matched. */
+.editor-stage {
+  margin: 4px var(--gutter) 0;
+}
+
+/* The stage reuses the clip player, so it inherits its sizing and only has to
+   restate the height the hero wants. */
+.editor-stage .clip-preview {
+  padding: 0;
+}
+
+.editor-stage .clip-stage {
+  aspect-ratio: auto;
+  height: 232px;
+  max-height: 34vh;
+  border-radius: 18px;
+}
+
+.editor-stage-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--label-2);
+  padding: 9px 2px 0;
+}
+
+.editor-stage-index {
+  font-weight: 600;
+  color: var(--label);
+  white-space: nowrap;
+}
+
+.editor-stage-len {
+  text-align: right;
+  min-width: 0;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* A Glimpse is a horizontal thing. A vertical row per moment stopped being
+   scannable somewhere around the tenth clip. */
+.strip {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--gutter) 2px;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
+}
+
+.strip-tile {
+  position: relative;
+  width: 60px;
+  height: 84px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--fill);
+  flex: none;
+  display: block;
+  padding: 0;
+}
+
+.strip-tile img,
+.strip-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.strip-tile.on {
+  box-shadow: 0 0 0 2.5px var(--brand);
+}
+
+.strip-tile.lifted {
+  opacity: 0.9;
+  transform: scale(1.06);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.strip-len {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.strip-add {
+  width: 34px;
+  height: 84px;
+  border-radius: 10px;
+  background: var(--fill);
+  color: var(--brand-ink);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+/* ------------------------------------------------- selected moment card */
+
+.moment-card {
+  margin: 16px var(--gutter) 0;
+  background: var(--bg-elevated);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.moment-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.moment-card-value {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--label-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.moment-card-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.moment-card-row .segmented {
+  flex: 1;
+  margin: 0;
+}
+
+.moment-card-row .btn {
+  width: auto;
+  flex: 1;
+  padding: 12px;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.moment-card-row .btn.plain {
+  flex: 0 0 auto;
+  padding: 12px 14px;
+}
+
+.sq-btn {
+  flex: none;
+  width: 44px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--fill);
+  color: var(--label-2);
+  display: grid;
+  place-items: center;
+}
+
+.sq-btn.on {
+  background: var(--brand);
+  color: #fff;
+}
+
+/* ---------------------------------------------------------- export sheet */
+
+.export-head {
+  padding: 0 var(--gutter) 4px;
+}
+
+.export-head h3 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.export-head p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--label-2);
+}
+
+.export-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px var(--gutter) 0;
+}
+
+/* A choice you confirm, not one that fires on tap: exporting is a wait, and
+   picking the wrong kind by mis-tapping would mean sitting through it. */
+.export-pick {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  width: 100%;
+  text-align: left;
+}
+
+.export-pick.on {
+  box-shadow: 0 0 0 2px var(--brand);
+}
+
+.export-pick:disabled {
+  opacity: 0.45;
+}
+
+.export-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: var(--fill-2);
+  color: var(--label-2);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.export-icon.grad {
+  background: var(--grad);
+  color: #fff;
+}
+
+.export-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.export-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.export-sub {
+  font-size: 13px;
+  color: var(--label-2);
+  margin-top: 1px;
+}
+
+.export-check {
+  flex: none;
+  color: var(--brand-ink);
+  display: grid;
+  place-items: center;
+}
+
+.export-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex: none;
+  background: var(--fill);
+}
+
+.export-quality {
+  margin-bottom: 0;
+  padding-top: 18px;
+}
+
+.export-actions {
+  padding: 18px var(--gutter) 0;
+}
+
+.export-actions .btn.filled {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.export-actions .btn.plain {
+  margin-top: 6px;
+}
+
+/* ------------------------------------------------------------- trim bar */
+
+.trimbar {
+  position: relative;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--fill);
+  overflow: hidden;
+  touch-action: none;
+}
+
+.trimbar-keep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--brand-soft);
+  border-left: 3px solid var(--brand);
+  border-right: 3px solid var(--brand);
+}
+
+/* Drawn under the handles, so dragging an edge past it does not hide it. */
+.trimbar-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: #fff;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.trimbar-scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--label-2);
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The visible edge is 3px, which no thumb can hit. The handle is a wider
+   transparent target straddling it. */
+.trimbar-handle {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 32px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.trimbar-handle.start {
+  left: -16px;
+}
+
+.trimbar-handle.end {
+  right: -16px;
+}
+
+.trimbar-handle:focus-visible {
+  outline: 2px solid var(--brand-ink);
+  outline-offset: 2px;
+}
+
+/* Silent moments are flagged on the tile itself — a clip that recorded no
+   sound is the defect this app exists to prevent. */
+.flagdot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--red);
+}
+
+/* ----------------------------------------------------------- poster cards */
+
+.posters ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--gutter);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The card is the swipe surface, so its corners have to be the rounded ones —
+   a square wrapper would show its own edges behind the card. */
+.posters .swipe {
+  border-radius: 18px;
+  background: var(--fill);
+}
+
+.poster {
+  position: relative;
+  height: 208px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--fill);
+}
+
+.poster-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  text-align: left;
+}
+
+.poster-media,
+.poster-empty {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--grad);
+}
+
+/* Text sits on unknown footage, so it needs its own contrast rather than
+   trusting the frame underneath to be dark. */
+.poster-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.82) 0%,
+    rgba(0, 0, 0, 0.15) 52%,
+    rgba(0, 0, 0, 0.3) 100%
+  );
+}
+
+.poster-ticks {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  gap: 3px;
+}
+
+.poster-ticks i {
+  width: 15px;
+  height: 3px;
+  border-radius: 2px;
+  background: #ffb020;
+}
+
+.poster-pills {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.poster-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.poster-meta {
+  position: absolute;
+  left: 16px;
+  /* Clears the play button so a long name wraps above it, not under it. */
+  right: 72px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+}
+
+.poster-name {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poster-sub {
+  font-size: 13px;
+  color: rgba(235, 235, 245, 0.75);
+  margin-top: 2px;
+}
+
+.poster-play {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #000;
+  display: grid;
+  place-items: center;
+  padding-left: 3px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+/* ---------------------------------------------------------- clip preview */
+
+.clip-pills {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.clip-pill {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Bottom-left of the viewfinder, ringed so it reads as a stack of what you
+   have caught rather than as part of the picture. */
+.last-moment {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  width: 52px;
+  height: 52px;
+  border-radius: 11px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+  z-index: 4;
+  padding: 0;
+}
+
+.last-moment img,
+.last-moment video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.clip-preview {
+  padding: 0 var(--gutter) 20px;
+}
+
+.clip-stage {
+  position: relative;
+  width: 100%;
+  /* Capped rather than aspect-locked: the sheet also has to fit the controls
+     the preview exists to explain. */
+  max-height: 34vh;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+  display: grid;
+  place-items: center;
+}
+
+.clip-stage img,
+.clip-stage video {
+  width: 100%;
+  height: 100%;
+  /* Contain, so trimming never shows a differently cropped frame than the
+     export will. */
+  object-fit: contain;
+  display: block;
+}
+
+.clip-play {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: #000;
+  display: grid;
+  place-items: center;
+  padding-left: 3px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+/* ------------------------------------------------------------- organise */
+
+.organise-preview {
+  padding: 0 var(--gutter) 18px;
+}
+
+.organise-strip {
+  display: flex;
+  gap: 5px;
+}
+
+.organise-tile {
+  flex: 1;
+  /* Fixed height rather than aspect-ratio: the tiles must line up as a strip
+     even when the Glimpse mixes portrait and landscape sources. */
+  height: 62px;
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--fill);
+}
+
+.organise-tile img,
+.organise-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.organise-caption {
+  font-size: 12px;
+  color: var(--label-2);
+  padding-top: 8px;
+}
+
+/* A list row that leads with an icon rather than a thumbnail. */
+.icon-row {
+  width: 100%;
+  text-align: left;
+  background: none;
+}
+
+/* Aligned to the label: the list's usual 72px inset assumes a thumbnail and
+   would float the separator into open space beside a 21px icon. */
+.icon-row + .icon-row::before {
+  left: 49px;
+}
+
+.row-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--label-2);
+}
+
+.row-icon.on {
+  color: var(--brand-ink);
+}
+
+.row-check {
+  flex: 0 0 auto;
+  color: var(--brand-ink);
+  display: grid;
+  place-items: center;
+}
+
+/* Quiet, but findable: the answer to "am I on the new version?" */
+.buildstamp {
+  text-align: center;
+  font-size: 11px;
+  color: var(--label-3);
+  padding: 26px 16px 8px;
+  font-variant-numeric: tabular-nums;
+}
