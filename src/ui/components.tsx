@@ -124,12 +124,16 @@ export function Sheet({
   children,
   leftAction,
   rightAction,
+  bare = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   leftAction?: ReactNode;
   rightAction?: ReactNode;
+  /** Omit the header row, for a sheet that titles itself and carries its own
+   *  dismiss. The accessible name still comes from `title`. */
+  bare?: boolean;
 }) {
   // Escape closes, matching how a sheet behaves with a keyboard attached.
   useEffect(() => {
@@ -147,7 +151,7 @@ export function Sheet({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="grabber" />
-        <div className="sheet-head">
+        {!bare && <div className="sheet-head">
           <div style={{ flex: '0 0 auto', minWidth: 60 }}>
             {leftAction ?? (
               <button className="nav-btn" onClick={onClose}>
@@ -159,7 +163,7 @@ export function Sheet({
           <div style={{ flex: '0 0 auto', minWidth: 60, textAlign: 'right' }}>
             {rightAction}
           </div>
-        </div>
+        </div>}
         <div className="sheet-body">{children}</div>
       </div>
     </div>

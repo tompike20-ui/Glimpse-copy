@@ -218,13 +218,19 @@ if (stripScrollable?.overflow !== 'auto') {
   errors.push('the filmstrip does not scroll horizontally');
 }
 
-/** Export now asks what kind first, so every export goes through the sheet. */
-async function startVideoExport() {
+/**
+ * Export is a choice you confirm, not one that fires on tap: pick the kind,
+ * then Save to Photos.
+ */
+async function startExport(kind) {
   await page.locator('.toolbar .btn.filled').click();
-  await page.waitForSelector('.sheet', { timeout: 10000 });
-  await page.locator('.sheet .row', { hasText: 'Video' }).click();
+  await page.waitForSelector('.export-picks', { timeout: 10000 });
+  await page.locator('.export-pick', { hasText: kind }).click();
+  await page.locator('.export-actions .btn.filled').click();
   await page.waitForSelector('.sheet', { state: 'detached', timeout: 10000 });
 }
+
+const startVideoExport = () => startExport('Whole Glimpse');
 
 await page.evaluate(() => {
   navigator.canShare = () => false;
@@ -256,7 +262,7 @@ await page.waitForSelector('.moment-card', { timeout: 10000 });
 // Trim used to be two sliders over nothing but numbers, in a sheet that hid
 // the clip while you adjusted it.
 await page.waitForSelector('.editor-stage video', { timeout: 20000 });
-const trimBefore = (await page.locator('.moment-card-value').first().innerText()).trim();
+const trimBefore = (await page.locator('.trimbar-scale').innerText()).replace(/\n/g, ' ').trim();
 
 // Drag the start handle a third of the way in. It is a pointer-driven widget,
 // not a range input, because a 3px edge is not a thumb-sized target.
@@ -274,7 +280,7 @@ const clip = await page.evaluate(() => {
   const v = document.querySelector('.editor-stage video');
   return { t: v?.currentTime ?? -1, w: v?.videoWidth ?? 0 };
 });
-const trimAfter = (await page.locator('.moment-card-value').first().innerText()).trim();
+const trimAfter = (await page.locator('.trimbar-scale').innerText()).replace(/\n/g, ' ').trim();
 step('9.5', `trim: "${trimBefore}" → "${trimAfter}", stage playhead ${clip.t.toFixed(2)}s`);
 if (!clip.w) errors.push('the editor stage never decoded a frame');
 // Dragging the start handle past the playhead must pull the picture with it.
@@ -339,23 +345,15 @@ if (stillOut < 1000) errors.push('export containing a still produced an empty fi
 await page.evaluate(() => {
   window.__exported = null;
 });
+// The stage is the picker: whatever frame it is showing is what gets saved,
+// and the sheet shows that frame back before you commit to it.
 await page.locator('.toolbar .btn.filled').click();
-await page.waitForSelector('.sheet', { timeout: 10000 });
-await page.locator('.sheet .row', { hasText: 'Snapshot' }).click();
-await page.waitForSelector('.preview-steps', { timeout: 20000 });
-await page.waitForFunction(
-  () => !document.querySelector('.preview-steps .btn.filled')?.disabled,
-  null,
-  { timeout: 20000 },
-);
-if (
-  await page.evaluate(() =>
-    [...document.querySelectorAll('.preview-stage video')].some((v) => !v.paused),
-  )
-) {
-  errors.push('the frame picker started playing instead of holding still');
+await page.waitForSelector('.export-picks', { timeout: 10000 });
+if (!(await page.locator('.export-thumb').count())) {
+  errors.push('the export sheet did not show the frame it would save');
 }
-await page.locator('.preview-steps .btn.filled').click();
+await page.locator('.export-pick', { hasText: 'This frame' }).click();
+await page.locator('.export-actions .btn.filled').click();
 await page.waitForFunction(() => window.__exported, null, { timeout: 30000 });
 const snap = await page.evaluate(async () => {
   const r = await fetch(window.__exported.href);

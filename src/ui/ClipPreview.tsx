@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { momentSpeed, type Moment } from '../types';
+import { momentSpeed, trimmedDurationMs, type Moment } from '../types';
 import { getBlob } from '../storage/db';
 import { Icon } from './Icon';
+
+function describeMoment(m: Moment): string {
+  if (m.source === 'import') return m.kind === 'still' ? 'Photo' : 'Imported';
+  return m.facing === 'user' ? 'Front camera' : 'Back camera';
+}
 
 /**
  * One moment, playing on a loop inside its own sheet.
@@ -11,10 +16,18 @@ import { Icon } from './Icon';
  * you had done. This plays the trimmed range only, and follows the sliders as
  * they move, so the controls have something to be about.
  */
-export function ClipPreview({ moment }: { moment: Moment }) {
+export function ClipPreview({
+  moment,
+  mediaRef,
+}: {
+  moment: Moment;
+  /** Lets the editor grab the frame currently on the stage for a snapshot,
+   *  rather than opening a second player to choose one. */
+  mediaRef?: React.MutableRefObject<HTMLVideoElement | HTMLImageElement | null>;
+}) {
   const [url, setUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const liveUrl = useRef<string | null>(null);
 
   const startS = moment.trimStartMs / 1000;
@@ -100,10 +113,32 @@ export function ClipPreview({ moment }: { moment: Moment }) {
         {!url ? (
           <span className="tile-ph" />
         ) : isStill ? (
-          <img src={url} alt="" />
+          <img
+            src={url}
+            alt=""
+            ref={(el) => {
+              if (mediaRef) mediaRef.current = el;
+            }}
+          />
         ) : (
-          <video ref={videoRef} src={url} playsInline preload="auto" />
+          <video
+            ref={(el) => {
+              videoRef.current = el;
+              if (mediaRef) mediaRef.current = el;
+            }}
+            src={url}
+            playsInline
+            preload="auto"
+          />
         )}
+
+        {/* What this clip is, on the clip — the artboard's pills. */}
+        <span className="clip-pills">
+          <span className="clip-pill">{describeMoment(moment)}</span>
+          <span className="clip-pill">
+            {(trimmedDurationMs(moment) / 1000).toFixed(1)}s
+          </span>
+        </span>
 
         {!isStill && url && !playing && (
           <button

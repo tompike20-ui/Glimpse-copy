@@ -5,6 +5,7 @@ import { newId, useApp } from '../store/useApp';
 import { ASPECT_RATIO, snapToBeat, type Moment } from '../types';
 import { Switch } from '../ui/components';
 import { Icon } from '../ui/Icon';
+import { Frame } from '../ui/Frame';
 
 /** All lengths are free. The original paywalls everything past 1 second. */
 const LENGTHS = [1000, 2000, 3000, 5000];
@@ -174,6 +175,15 @@ export default function Capture() {
   if (!project) return null;
 
   const ratio = ASPECT_RATIO[project.aspect];
+  // The moment just caught, so you can see what you got without leaving the
+  // viewfinder to check.
+  //
+  // Read from the store rather than subscribed with a selector: this sits
+  // after the early return above, where a hook cannot go. It stays current
+  // because `project` *is* subscribed, and recording changes its momentIds —
+  // so every new moment re-renders this and re-reads the snapshot.
+  const lastId = project.momentIds[project.momentIds.length - 1];
+  const last = lastId ? useApp.getState().state.moments[lastId] : undefined;
 
   return (
     <div className="screen dark">
@@ -201,6 +211,16 @@ export default function Capture() {
             {count} moment{count === 1 ? '' : 's'}
             {project.bpm ? ` · ${project.bpm} BPM` : ''}
           </div>
+        )}
+
+        {last && (
+          <button
+            className="last-moment"
+            onClick={() => nav(`/p/${id}`)}
+            aria-label="Review what you have captured"
+          >
+            <Frame moment={last} />
+          </button>
         )}
 
         <button

@@ -121,6 +121,23 @@ function daysLeft(deletedAt: number): string {
   return `${left} day${left === 1 ? '' : 's'} left`;
 }
 
+/** m:ss, for durations long enough that "64.0s" stops being readable. */
+function fmtClock(ms: number): string {
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/**
+ * A rough finished size, so "Save to Photos" is not a blind commitment on a
+ * phone that may be nearly full. Measured on device at roughly 1.5 MB per
+ * second of 1080p; 720p lands near half that. Deliberately approximate — the
+ * real figure depends on the footage, and the label says "about".
+ */
+function estimateMb(ms: number, preset: '1080p' | '720p'): number {
+  const perSecond = preset === '1080p' ? 1.5 : 0.7;
+  return Math.max(1, Math.round((ms / 1000) * perSecond));
+}
+
 function describe(m: Moment): string {
   if (m.source === 'import') return m.kind === 'still' ? 'Photo' : 'Imported clip';
   return `${m.facing === 'user' ? 'Front' : 'Back'} camera`;
@@ -162,13 +179,19 @@ export default function Editor() {
   const [undo, setUndo] = useState<{ momentId: string } | null>(null);
   const [organising, setOrganising] = useState(false);
   const [exportChoice, setExportChoice] = useState(false);
-  // True while the preview is doubling as a frame picker.
-  const [picking, setPicking] = useState(false);
+  const [exportKind, setExportKind] = useState<'video' | 'frame'>('video');
+  /** A capture of the stage frame, shown on the "This frame" option. */
+  const [framePreview, setFramePreview] = useState<string | null>(null);
   const [savingFrame, setSavingFrame] = useState(false);
+  /** Stage playback position, mirrored onto the trim bar. */
+  const [playheadMs, setPlayheadMs] = useState<number | undefined>(undefined);
   // The order Organise replaced, kept only long enough to offer it back.
   const [orderUndo, setOrderUndo] = useState<string[] | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
 
+  /** The element currently on the stage, so a snapshot can be taken from the
+   *  frame already on screen rather than from a second player. */
+  const stageMedia = useRef<HTMLVideoElement | HTMLImageElement | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const musicRef = useRef<HTMLInputElement>(null);
   const tapsRef = useRef<number[]>([]);
@@ -199,6 +222,24 @@ export default function Editor() {
     }
   }, [order, selected]);
 
+  /* Poll the stage element rather than listening for timeupdate, which fires
+     about four times a second — too coarse for a marker to look attached to
+     the picture. */
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      const el = stageMedia.current;
+      setPlayheadMs(
+        el instanceof HTMLVideoElement && el.readyState >= 1
+          ? el.currentTime * 1000
+          : undefined,
+      );
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   useEffect(() => {
     if (!shared || !userId) return;
     return subscribeToProject(id, () => {
@@ -216,6 +257,7 @@ export default function Editor() {
   );
 
   const totalMs = moments.reduce((s, m) => s + trimmedDurationMs(m), 0);
+  const preset = project?.exportPreset ?? '1080p';
   const silentCount = moments.filter((m) => m.peakRms < 0.004).length;
   const plan = planExport(state, id);
   const selectedMoment = selected ? state.moments[selected] : null;
@@ -227,13 +269,38 @@ export default function Editor() {
 
   if (!project) return null;
 
-  async function saveFrame(src: FrameSource) {
+  /** Capture the stage frame when the sheet opens, so the option can show it. */
+  function captureStagePreview() {
+    const el = stageMedia.current;
+    if (!el) return setFramePreview(null);
+    const w = el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth;
+    const h = el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight;
+    if (!w || !h) return setFramePreview(null);
+    const canvas = document.createElement('canvas');
+    canvas.width = 96;
+    canvas.height = Math.round((h / w) * 96);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return setFramePreview(null);
+    ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
+    try {
+      setFramePreview(canvas.toDataURL('image/jpeg', 0.7));
+    } catch {
+      setFramePreview(null);
+    }
+  }
+
+  async function saveStageFrame() {
+    const el = stageMedia.current;
+    if (!el || !project) return;
     setExportErr(null);
     setSavingFrame(true);
     try {
-      const blob = await grabFrame(src, project!);
-      const ok = await shareImage(blob, snapshotFileName(project!.name));
-      setPicking(false);
+      const src: FrameSource =
+        el instanceof HTMLVideoElement
+          ? { el, kind: 'video' }
+          : { el, kind: 'still' };
+      const blob = await grabFrame(src, project);
+      const ok = await shareImage(blob, snapshotFileName(project.name));
       setToast(ok ? 'Shared' : 'Snapshot ready');
     } catch (err) {
       setExportErr((err as Error).message);
@@ -338,7 +405,7 @@ export default function Editor() {
                 rows — a settings screen that happened to contain video. */}
             {selectedMoment && (
               <div className="editor-stage">
-                <ClipPreview moment={selectedMoment} />
+                <ClipPreview moment={selectedMoment} mediaRef={stageMedia} />
                 <div className="editor-stage-meta">
                   <span className="editor-stage-index">
                     Moment {order.indexOf(selectedMoment.id) + 1} of {moments.length}
@@ -463,16 +530,28 @@ export default function Editor() {
                     <div className="moment-card-head">
                       <span>Trim</span>
                       <span className="moment-card-value">
-                        {(trimmedDurationMs(selectedMoment) / 1000).toFixed(2)}s of{' '}
-                        {(selectedMoment.durationMs / 1000).toFixed(2)}s
+                        Moment {order.indexOf(selectedMoment.id) + 1}
                       </span>
                     </div>
                     <TrimBar
                       moment={selectedMoment}
+                      playheadMs={playheadMs}
                       onChange={(startMs, endMs) =>
                         void trimMoment(id, selectedMoment.id, startMs, endMs)
                       }
                     />
+                    <div className="trimbar-scale">
+                      <span>{(selectedMoment.trimStartMs / 1000).toFixed(2)}s</span>
+                      <span>
+                        keeping {(trimmedDurationMs(selectedMoment) / 1000).toFixed(2)}s
+                        of {(selectedMoment.durationMs / 1000).toFixed(2)}s
+                      </span>
+                      <span>
+                        {(
+                          (selectedMoment.trimEndMs ?? selectedMoment.durationMs) / 1000
+                        ).toFixed(2)}s
+                      </span>
+                    </div>
                   </>
                 )}
 
@@ -551,7 +630,10 @@ export default function Editor() {
         )}
         <button
           className="btn filled"
-          onClick={() => setExportChoice(true)}
+          onClick={() => {
+            captureStagePreview();
+            setExportChoice(true);
+          }}
           disabled={!!progress || moments.length === 0}
         >
           {progress ? (
@@ -600,63 +682,98 @@ export default function Editor() {
         />
       )}
 
-      {/* The same player, used to choose which frame to keep. */}
-      {picking && (
-        <Preview
-          moments={moments}
-          music={null}
-          onClose={() => setPicking(false)}
-          onSaveFrame={saveFrame}
-          saving={savingFrame}
-        />
-      )}
-
       {exportChoice && (
-        <Sheet title="Export" onClose={() => setExportChoice(false)}>
-          <div className="group">
-            <div className="list">
-              <button
-                className="row icon-row"
-                onClick={() => {
-                  setExportChoice(false);
-                  void runExport();
-                }}
-              >
-                <span className="row-icon on">
-                  <Icon name="film" size={21} />
+        <Sheet title="Export" bare onClose={() => setExportChoice(false)}>
+          <div className="export-head">
+            <h3>Export</h3>
+            <p>
+              {project.name} · {moments.length} moment
+              {moments.length === 1 ? '' : 's'} · {fmtClock(totalMs)}
+            </p>
+          </div>
+
+          <div className="export-picks">
+            <button
+              className={`export-pick${exportKind === 'video' ? ' on' : ''}`}
+              aria-pressed={exportKind === 'video'}
+              onClick={() => setExportKind('video')}
+            >
+              <span className="export-icon grad">
+                <Icon name="film" size={22} />
+              </span>
+              <span className="export-text">
+                <span className="export-title">Whole Glimpse</span>
+                <span className="export-sub">
+                  {preset} video · about {estimateMb(totalMs, preset)} MB ·{' '}
+                  {plan.canStreamCopy ? 'exports instantly' : 'needs re-encoding'}
                 </span>
-                <span className="row-main">
-                  <span className="row-title">Video</span>
-                  <span className="row-sub">
-                    The whole Glimpse — {moments.length} moment
-                    {moments.length === 1 ? '' : 's'},{' '}
-                    {(totalMs / 1000).toFixed(1)}s
-                    {plan.canStreamCopy ? ' · instant' : ' · needs re-encoding'}
+              </span>
+              {exportKind === 'video' && (
+                <span className="export-check">
+                  <Icon name="check" size={20} strokeWidth={2.6} />
+                </span>
+              )}
+            </button>
+
+            <button
+              className={`export-pick${exportKind === 'frame' ? ' on' : ''}`}
+              aria-pressed={exportKind === 'frame'}
+              onClick={() => setExportKind('frame')}
+              disabled={!selectedMoment}
+            >
+              <span className="export-icon">
+                <Icon name="photo" size={22} />
+              </span>
+              <span className="export-text">
+                <span className="export-title">This frame</span>
+                <span className="export-sub">
+                  {selectedMoment
+                    ? `JPEG still · moment ${order.indexOf(selectedMoment.id) + 1}`
+                    : 'Nothing on the stage to capture'}
+                </span>
+              </span>
+              {/* The frame itself, so what you are about to save is not a
+                  description of a frame but the frame. */}
+              {framePreview ? (
+                <img className="export-thumb" src={framePreview} alt="" />
+              ) : (
+                exportKind === 'frame' && (
+                  <span className="export-check">
+                    <Icon name="check" size={20} strokeWidth={2.6} />
                   </span>
-                </span>
-              </button>
-              <button
-                className="row icon-row"
-                onClick={() => {
-                  setExportChoice(false);
-                  setPicking(true);
-                }}
-              >
-                <span className="row-icon on">
-                  <Icon name="photo" size={21} />
-                </span>
-                <span className="row-main">
-                  <span className="row-title">Snapshot</span>
-                  <span className="row-sub">
-                    A single frame as a photo — pick it on the next screen
-                  </span>
-                </span>
-              </button>
+                )
+              )}
+            </button>
+          </div>
+
+          {exportKind === 'video' && (
+            <div className="group export-quality">
+              <div className="group-header">Quality</div>
+              <Segmented
+                options={['1080p', '720p'] as const}
+                value={preset}
+                onChange={(v) => void setExportPreset(id, v)}
+                format={(v) => v}
+              />
             </div>
-            <div className="group-footer">
-              Both open the share sheet, where Save Video and Save Image put the
-              result in Photos.
-            </div>
+          )}
+
+          <div className="export-actions">
+            <button
+              className="btn filled"
+              disabled={!!progress || savingFrame}
+              onClick={() => {
+                setExportChoice(false);
+                if (exportKind === 'video') void runExport();
+                else void saveStageFrame();
+              }}
+            >
+              <Icon name="share" size={19} />
+              Save to Photos
+            </button>
+            <button className="btn plain" onClick={() => setExportChoice(false)}>
+              Cancel
+            </button>
           </div>
         </Sheet>
       )}

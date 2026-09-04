@@ -14,9 +14,13 @@ const MIN_MS = 100;
 export function TrimBar({
   moment,
   onChange,
+  playheadMs,
 }: {
   moment: Moment;
   onChange: (startMs: number, endMs: number | null) => void;
+  /** Where the clip is currently playing, drawn against the untrimmed clip so
+   *  the kept window and the playhead can be read together. */
+  playheadMs?: number;
 }) {
   const barRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<'start' | 'end' | null>(null);
@@ -63,6 +67,12 @@ export function TrimBar({
 
   return (
     <div className={`trimbar${dragging ? ' dragging' : ''}`} ref={barRef}>
+      {playheadMs !== undefined && (
+        <span
+          className="trimbar-playhead"
+          style={{ left: `${Math.min(100, Math.max(0, (playheadMs / total) * 100))}%` }}
+        />
+      )}
       <div
         className="trimbar-keep"
         style={{ left: `${leftPct}%`, right: `${rightPct}%` }}
