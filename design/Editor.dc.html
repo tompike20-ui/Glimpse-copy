@@ -1,0 +1,114 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #ffb020; } a:hover { color: #f0a01c; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #000; color: #fff; letter-spacing: -0.022em; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="flex: none; padding: 56px 16px 10px; display: flex; align-items: center; gap: 10px;">
+    <div style="width: 44px; height: 44px; display: flex; align-items: center; margin-left: -11px;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#ffb020" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4.5 7.5 12l7.5 7.5"/></svg></div>
+    <div style="flex: 1; min-width: 0;">
+      <div style="font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Weekend in Rome</div>
+      <div style="font-size: 12px; color: rgba(235,235,245,0.6);">38 moments · 1:04 · exports instantly</div>
+    </div>
+    <div style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: flex-end; margin-right: -11px;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#ffb020" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2.2"/><circle cx="10" cy="16" r="2.2"/></svg></div>
+  </div>
+
+  <!-- The hero: a scrubbable stage showing the moment under the playhead -->
+  <div style="flex: none; margin: 0 16px; height: 232px; border-radius: 18px; overflow: hidden; position: relative; background: linear-gradient(150deg, #4a3220, #8a4a1e 55%, #2b1a0f);">
+    <div style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.55), transparent 45%);"></div>
+    <div style="position: absolute; left: 14px; top: 12px; padding: 4px 9px; border-radius: 999px; background: rgba(0,0,0,0.55); font-size: 11px; font-weight: 600;">Moment 12</div>
+    <div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 14px;">
+      <div style="height: 3px; border-radius: 2px; background: rgba(255,255,255,0.22); overflow: hidden;">
+        <div style="width: 31%; height: 100%; background: #ffb020;"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: rgba(235,235,245,0.7); margin-top: 7px; font-variant-numeric: tabular-nums;">
+        <span>0:20</span><span>1:04</span>
+      </div>
+    </div>
+    <div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 58px; height: 58px; border-radius: 29px; background: rgba(255,255,255,0.92); display: grid; place-items: center;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="#000"><path d="M8 5.2v13.6a1 1 0 0 0 1.5.87l11-6.8a1 1 0 0 0 0-1.74l-11-6.8A1 1 0 0 0 8 5.2z"/></svg>
+    </div>
+  </div>
+
+  <!-- The filmstrip: the Glimpse's real shape, horizontal and scannable -->
+  <div style="flex: none; padding: 16px 0 0;">
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 16px 9px;">
+      <div style="font-size: 15px; font-weight: 600;">Timeline</div>
+      <div style="display: flex; align-items: center; gap: 5px; min-height: 44px; font-size: 13px; color: #ffb020;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ffb020" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h6l4 10h6"/><path d="M4 17h6M17 4l3 3-3 3M17 14l3 3-3 3"/></svg>
+        Organise
+      </div>
+    </div>
+    <div style="display: flex; gap: 6px; padding: 0 16px; overflow: hidden;">
+      <div style="width: 60px; height: 84px; border-radius: 10px; background: linear-gradient(150deg,#3b2a1d,#6b3b1c); flex: none; position: relative;">
+        <div style="position: absolute; bottom: 4px; right: 4px; font-size: 10px; padding: 1px 4px; border-radius: 5px; background: rgba(0,0,0,0.6); font-variant-numeric: tabular-nums;">1.0</div>
+      </div>
+      <div style="width: 60px; height: 84px; border-radius: 10px; background: linear-gradient(150deg,#31404a,#48606e); flex: none; position: relative;">
+        <div style="position: absolute; bottom: 4px; right: 4px; font-size: 10px; padding: 1px 4px; border-radius: 5px; background: rgba(0,0,0,0.6); font-variant-numeric: tabular-nums;">1.0</div>
+      </div>
+      <!-- selected moment carries the amber ring -->
+      <div style="width: 60px; height: 84px; border-radius: 10px; background: linear-gradient(150deg,#4a3220,#8a4a1e); flex: none; position: relative; box-shadow: 0 0 0 2.5px #ffb020;">
+        <div style="position: absolute; bottom: 4px; right: 4px; font-size: 10px; padding: 1px 4px; border-radius: 5px; background: rgba(0,0,0,0.6); font-variant-numeric: tabular-nums;">0.6</div>
+      </div>
+      <div style="width: 60px; height: 84px; border-radius: 10px; background: linear-gradient(150deg,#2a2233,#4b3660); flex: none; position: relative;">
+        <div style="position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 4px; background: #ff453a;"></div>
+        <div style="position: absolute; bottom: 4px; right: 4px; font-size: 10px; padding: 1px 4px; border-radius: 5px; background: rgba(0,0,0,0.6); font-variant-numeric: tabular-nums;">1.0</div>
+      </div>
+      <div style="width: 60px; height: 84px; border-radius: 10px; background: linear-gradient(150deg,#243528,#3d5c43); flex: none;"></div>
+      <div style="width: 26px; height: 84px; border-radius: 10px; background: rgba(120,120,128,0.24); flex: none;"></div>
+    </div>
+    <div style="font-size: 12px; color: rgba(235,235,245,0.6); padding: 9px 16px 0;">Tap a moment to play it. Hold to pick it up and reorder.</div>
+  </div>
+
+  <!-- selected moment's controls, inline rather than buried in a sheet -->
+  <div style="flex: 1; min-height: 0; padding: 16px 16px 0;">
+    <div style="background: #1c1c1e; border-radius: 14px; padding: 14px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <div style="font-size: 15px; font-weight: 600;">Moment 3</div>
+        <div style="font-size: 13px; color: rgba(235,235,245,0.6); font-variant-numeric: tabular-nums;">0.6s of 1.09s</div>
+      </div>
+      <div style="height: 34px; border-radius: 8px; background: rgba(120,120,128,0.24); position: relative; overflow: hidden; margin-bottom: 14px;">
+        <div style="position: absolute; left: 18%; right: 26%; top: 0; bottom: 0; background: rgba(255,176,32,0.2); border-left: 3px solid #ffb020; border-right: 3px solid #ffb020;"></div>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <div style="flex: 1; height: 34px; border-radius: 9px; background: rgba(120,120,128,0.24); display: grid; place-items: center; font-size: 13px; color: rgba(235,235,245,0.6);">0.5×</div>
+        <div style="flex: 1; height: 34px; border-radius: 9px; background: #636366; display: grid; place-items: center; font-size: 13px; font-weight: 600;">1×</div>
+        <div style="flex: 1; height: 34px; border-radius: 9px; background: rgba(120,120,128,0.24); display: grid; place-items: center; font-size: 13px; color: rgba(235,235,245,0.6);">2×</div>
+        <div style="width: 44px; height: 34px; border-radius: 9px; background: rgba(120,120,128,0.24); display: grid; place-items: center;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(235,235,245,0.75)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6.5a3 3 0 0 1 6 0V11m0 3.2a3 3 0 0 1-6-2.2V9.5"/><path d="M12 18.5V21"/><path d="m4 4 16 16"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: none; padding: 12px 16px 34px; display: flex; gap: 9px;">
+    <div style="flex: 1; height: 50px; border-radius: 14px; background: rgba(120,120,128,0.24); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 15px; font-weight: 600; color: #ffb020;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffb020" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h2L9 4h6l1.5 2h2A2.5 2.5 0 0 1 21 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5z"/><circle cx="12" cy="12.5" r="3.5"/></svg>
+      Record
+    </div>
+    <div style="flex: 1; height: 50px; border-radius: 14px; background: rgba(120,120,128,0.24); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 15px; font-weight: 600; color: #ffb020;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffb020" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="8.5" cy="10" r="1.5"/><path d="m4 17 4.5-4.5a2 2 0 0 1 2.8 0L16 17"/></svg>
+      Import
+    </div>
+    <div style="flex: 1.15; height: 50px; border-radius: 14px; background: linear-gradient(160deg, #f0a01c, #d24b16); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 15px; font-weight: 600;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3.5"/><path d="m8 7 4-3.5L16 7"/><path d="M5 13v5.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V13"/></svg>
+      Export
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
