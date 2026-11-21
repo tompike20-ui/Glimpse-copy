@@ -323,11 +323,74 @@ checking trims, not segment compatibility.
 
 ### Working
 
-Phases 0–2 of the original plan: the diagnostic spike, the local-first app
-(capture, edit, organise, export), and deploy-and-install. Plus everything
-requested later: export as video or snapshot, preview of a clip and of the whole
-Glimpse, randomise and organise, the UI overhaul, playback from the list, and
-recording into the middle of the timeline.
+Phases 0–2 of the original plan — the diagnostic spike, the local-first app,
+and deploy-and-install — plus everything requested after it. The full inventory,
+by surface, because several of these are easy to forget they exist:
+
+**Glimpses list**
+
+- Poster cards carrying each Glimpse's own first frame, length, moment count and
+  last-edited day
+- Play a Glimpse straight from the list, without opening the editor
+- Swipe left to delete, with a confirm
+- New Glimpse: name + shape (portrait / square / landscape, **fixed at
+  creation**)
+- Header totals: how many Glimpses, how much footage
+- Banner when clips were recovered from an interrupted recording
+- Banner when storage passes 80% full
+- A visible build stamp (short git SHA + build time), so "did this actually
+  deploy?" is answerable from inside the app
+- A three-point introduction, shown once and never again
+
+**Capture**
+
+- One held stream, a fresh recorder per moment (§3.3)
+- Lengths 1s / 2s / 3s / 5s, **all free**
+- Countdown ring on the shutter; stop early keeps what you got
+- Flip camera mid-project
+- Live mic meter
+- A warning when a moment recorded almost no sound
+- Shape guide dimming everything outside the chosen aspect
+- Review → keep or discard, with an auto-save toggle to skip it
+- Moment count and BPM pill
+- The last moment thumbnailed in the corner of the viewfinder
+- Interruption handling (call, Siri, backgrounding)
+- **Record into a chosen position** in the timeline, not only the end
+
+**Editor**
+
+- A stage showing the selected moment, looping over its trim window, with pills
+  naming the source and the kept length
+- A horizontal filmstrip: duration badge per tile, a dot on silent moments, an
+  amber ring on the selection, long-press to reorder, and a tile to append
+- Inline controls for the selected moment: **trim** (two-handle bar with a
+  playhead and a start/keeping/end scale), **speed** 0.5× / 1× / 2×, **mute**,
+  **record after this**, **delete**
+- An imported photo gets an **on-screen duration** slider (0.5–10s) instead of
+  trim — it used to be hard-coded to 2s with no way to change it
+- Undo for deleting a moment, and for an Organise that went wrong
+- **Organise** sheet: shuffle, oldest recorded first, newest recorded first —
+  with the resulting order previewed before it is applied
+- Preview the whole Glimpse without exporting
+- **Import** photos and videos from the library
+- **Export** sheet: whole Glimpse or this frame, quality, approximate size
+- Settings: rename, **soundtrack** (with ducking mode and volume), **tap
+  tempo**, **export quality** (1080p / 720p), **lock** against accidental
+  edits, **Recently Deleted**, collaboration
+
+**Export**
+
+- `-c copy` fast path, with the reason shown when it cannot be taken
+- Real progress driven by ffmpeg's own events, not a static bar
+- Snapshot of a single frame, via canvas rather than ffmpeg
+- Handed to the iOS share sheet
+
+**Under the hood**
+
+- Journal replay on launch; crash loses at most the entry being written
+- Orphan recovery — blobs referenced by no project are offered back, not leaked
+- 30-day trash
+- Storage quota reported and surfaced
 
 ### Built but switched off
 
