@@ -317,6 +317,26 @@ checking trims, not segment compatibility.
 - One source claimed a "~50 MB PWA storage limit". **This is false** on modern
   WebKit, where quota scales with disk — measured at 38.4 GB.
 
+### Getting GitHub Pages to deploy at all
+
+Three runs failed before the first successful deploy. None of it is in the
+Pages documentation in a findable form, and all of it will cost the same time
+again:
+
+1. **"Get Pages site failed."** Pages had never been enabled on the repository.
+   Adding `enablement: true` to `actions/configure-pages` lets the workflow turn
+   it on itself, without a manual trip to repo settings.
+2. **"Resource not accessible by integration."** `enablement: true` cannot
+   override a *plan* restriction — **Pages from a private repository requires a
+   paid GitHub plan.** The repo has to be public on a free account.
+3. **The deploy job ran zero steps, with no runner assigned and no error.** The
+   `github-pages` environment restricts deployments to the default branch by
+   default, and work was happening on a feature branch. The branch has to be
+   allowed in the environment's deployment-branch rules.
+
+Steps 2 and 3 both need a human in repo settings; nothing in the workflow can
+do them.
+
 ---
 
 ## 5. What exists today
@@ -480,3 +500,52 @@ Things worth doing differently, in rough order of value.
    expensive part of the plan and the least connected to the stated priority.
    The local-first app is complete and useful without it, and "other people can
    use the app" was already satisfied by a public URL.
+
+---
+
+## 8. What to carry over
+
+This document is the reasoning. It is not the materials. Several things in the
+old repo are either expensive to rebuild or impossible to reconstruct from
+prose — these are worth copying rather than rewriting.
+
+### Copy verbatim, do not rewrite
+
+| Path | Why |
+|---|---|
+| `design/*.dc.html`, `design/canvas.json` | **The eight artboards are the UI spec.** §3.7 and §7 both lean on them; without the files that advice is unusable. `GlimpsesAlt` is an alternate direction that was never meant to ship. |
+| `public/vendor/` (31 MB) | The exact single-threaded ffmpeg build, laid out so the classic worker resolves `814.ffmpeg.js` beside `ffmpeg.js`. §4 explains the constraints, but assembling the right files again is fiddly and the failure mode is obscure. |
+| `supabase/schema.sql` | The RLS policies and the `SECURITY DEFINER` membership function. §5 describes the design; this is the thing itself. |
+| `.github/workflows/deploy.yml` | Works, including the `enablement: true` line. Change the branch names. |
+| `e2e/smoke.mjs` | 17 steps. Includes the assertion that matters most — `getUserMedia` called exactly once across three moments. |
+| `e2e/screens.mjs` | The screenshot harness. §7 says write it on day one; this *is* it. |
+| `public/icons/`, `src/ui/Icon.tsx` | The app icon and the 24×24 vector set. |
+| `src/index.css` | The token block at the top, at minimum. The contrast work behind `--brand-ink` (§3.7) is not worth redoing. |
+
+### Portable logic, worth lifting with its tests
+
+All pure, all tested without a browser, all independent of the UI:
+
+| Module | What it is |
+|---|---|
+| `src/storage/journal.ts` | The replay reducer and all fourteen entry types. The spine of the app. |
+| `src/export/filtergraph.ts` | ffmpeg filter-graph generation as pure strings. |
+| `src/export/concat.ts` | `planExport` — the five reasons the fast path can be unavailable. |
+| `src/export/snapshot.ts` | Canvas frame grab and fit-and-pad maths. |
+| `src/ui/organise.ts` | Shuffle / oldest / newest, guaranteed to return a permutation. |
+| `src/ui/useReorder.ts` | Pointer-event drag-to-reorder. **Rebuilt four times** before it worked on touch; see §3.6 for the three traps. |
+| `src/storage/compat.test.ts` | Fixtures in the *old* journal shapes. The guarantee that existing recordings keep loading. |
+
+### Also in the old repo
+
+- `README.md` — overlaps this document heavily, but carries the measured
+  figures inline and a short architecture tour.
+- The Phase 0 spike **no longer exists** — it was removed once it had served its
+  purpose. §7 recommends building one again; §4 is what it produced, so a second
+  attempt can skip it if those findings are trusted.
+
+### Deliberately leave behind
+
+- The grouped-list shell, the grid view and the per-moment sheet. All replaced
+  (§3.7) and all deleted.
+- Anything in `dist/`, `node_modules/`, `tsconfig.tsbuildinfo`.
